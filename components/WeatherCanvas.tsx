@@ -332,17 +332,17 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
             // Negative: 靠近太阳一侧
             // Positive: 远离太阳一侧 (屏幕下方/对角线)
             this.flares = [
-                // 1. 靠近太阳的装饰光斑
-                { distRatio: -0.2, size: 60, opacity: 0.1, color: '255, 255, 255' },
+              // 1. 靠近太阳的装饰光斑
+              { distRatio: -0.2, size: 60, opacity: 0.06, color: '255, 255, 255' },
                 
-                // 2. 屏幕中间的过渡
-                { distRatio: 0.4, size: 30, opacity: 0.05, color: '200, 240, 255' }, 
+              // 2. 屏幕中间的过渡
+              { distRatio: 0.4, size: 30, opacity: 0.035, color: '200, 240, 255' }, 
                 
-                // 3. 照射在导航栏/底部区域的主光斑 (关键修改: 增加不透明度，使用正比例)
-                // 当太阳在上方时，这些光斑会落在屏幕下方
-                { distRatio: 1.0, size: 80, opacity: 0.15, color: '255, 245, 220' }, // 底部大范围柔光
-                { distRatio: 1.5, size: 50, opacity: 0.15, color: '255, 250, 230' },  // 叠加的较亮光斑
-                { distRatio: 2.0, size: 100, opacity: 0.18, color: '255, 240, 200' }, // 最底部的超大暖光，覆盖导航栏
+              // 3. 照射在导航栏/底部区域的主光斑
+              // 当太阳在上方时，这些光斑会落在屏幕下方
+              { distRatio: 1.0, size: 80, opacity: 0.08, color: '255, 245, 220' }, // 底部大范围柔光
+              { distRatio: 1.5, size: 50, opacity: 0.08, color: '255, 250, 230' },  // 叠加的较亮光斑
+              { distRatio: 2.0, size: 100, opacity: 0.1, color: '255, 240, 200' }, // 最底部的超大暖光，覆盖导航栏
             ];
         }
 
@@ -449,8 +449,9 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
                 const realX = centerX + (centerX - sunX) * flare.distRatio;
                 const realY = centerY + (centerY - sunY) * flare.distRatio;
 
-                // 强度修正不透明度
-                const currentOpacity = flare.opacity * intensity;
+                // 强度修正不透明度，并限制峰值，避免光斑过亮
+                const intensityScale = 0.7 + intensity * 0.3;
+                const currentOpacity = Math.min(flare.opacity * intensityScale, 0.12);
 
                 // 尺寸修正：随强度微调，大幅减小变化幅度
                 // 用户反馈之前太大，现在调整为：
