@@ -1,8 +1,8 @@
-# Weather+
+# Web Weather
 
 English | [中文](README.zh.md)
 
-Weather+ is a weather visualization and control console built with Next.js.
+Web Weather is a browser-based weather visualization and control console built with Next.js.
 
 ## Getting Started
 

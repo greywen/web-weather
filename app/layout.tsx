@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Weather +",
-  description: "Weather Visualization and Console",
+  title: "Web Weather",
+  description: "Browser-based weather visualization",
 };
 
 export default function RootLayout({

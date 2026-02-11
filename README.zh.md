@@ -1,8 +1,8 @@
-# Weather+
+# Web Weather
 
 中文 | [English](README.md)
 
-Weather+ 是一个天气可视化与控制台项目，基于 Next.js 构建。
+Web Weather 是一个浏览器端天气可视化与控制台项目，基于 Next.js 构建。
 
 ## 快速开始
 
