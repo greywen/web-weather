@@ -1,0 +1,8 @@
+{
+  "github.copilot.chat.localeOverride": "en",
+  "github.copilot.chat.commitMessageGeneration.instructions": [
+    {
+      "text": "Always generate the commit message in English. The title and description must be entirely in English."
+    }
+  ]
+}

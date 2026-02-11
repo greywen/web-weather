@@ -24,3 +24,196 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.fog-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 40;
+  pointer-events: none;
+  overflow: hidden;
+  --fog-density: 0.5;
+}
+
+.fog-layer {
+  position: absolute;
+  inset: -20%;
+  width: 140%;
+  height: 140%;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.fog-base {
+  background-image: url('/images/smoke_1.jpg');
+  opacity: calc(0.22 + (var(--fog-density) * 0.35));
+  filter: saturate(0.7) blur(0.5px);
+}
+
+.fog-smoke {
+  background-image: url('/images/smoke_2.png');
+  opacity: calc(0.2 + (var(--fog-density) * 0.5));
+  animation: fog-drift 60s infinite alternate;
+  mix-blend-mode: screen;
+}
+
+.fog-smoke--slow {
+  opacity: calc(0.12 + (var(--fog-density) * 0.4));
+  animation: fog-drift-slow 90s infinite alternate;
+  transform: translate3d(0, 0, 0) rotate(0.01deg);
+}
+
+.fog-front {
+  background-image: url('/images/smoke_2.png');
+  opacity: calc(0.28 + (var(--fog-density) * 0.55));
+  filter: blur(8px) saturate(0.8);
+  animation: fog-front 35s infinite alternate;
+  transform: scale(1.08) translate3d(0, 0, 0);
+  mix-blend-mode: screen;
+}
+
+.fog-depth {
+  position: absolute;
+  inset: -10% 0 0 0;
+  background: linear-gradient(
+    to top,
+    rgba(235, 240, 245, 0.35) 0%,
+    rgba(235, 240, 245, 0.18) 35%,
+    rgba(235, 240, 245, 0.05) 60%,
+    rgba(235, 240, 245, 0) 75%
+  );
+  opacity: calc(0.15 + (var(--fog-density) * 0.6));
+  filter: blur(4px);
+}
+
+.fog-haze {
+  position: absolute;
+  inset: 0;
+  background: rgba(210, 220, 230, 0.08);
+  opacity: calc(0.18 + (var(--fog-density) * 0.45));
+  backdrop-filter: blur(calc(4px + (var(--fog-density) * 8px))) saturate(0.8);
+  -webkit-backdrop-filter: blur(calc(4px + (var(--fog-density) * 8px))) saturate(0.8);
+}
+
+.fog-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0) 40%, rgba(0, 0, 0, 0.25) 100%);
+  opacity: calc(0.2 + (var(--fog-density) * 0.35));
+}
+
+.clouds-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  overflow: hidden;
+  --cloud-opacity: 0.5;
+}
+
+.clouds {
+  opacity: calc(0.08 + (var(--cloud-opacity) * 0.35));
+  pointer-events: none;
+  position: absolute;
+  overflow: hidden;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  filter: blur(2px) saturate(0.9);
+  mix-blend-mode: soft-light;
+}
+
+.clouds-1,
+.clouds-2,
+.clouds-3 {
+  background-repeat: repeat-x;
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 500px;
+}
+
+.clouds-1 {
+  background-image: url('/images/clouds_2.png');
+  animation: clouds-loop-1 var(--cloud-duration-1, 20s) infinite linear;
+  opacity: calc(0.06 + (var(--cloud-opacity) * 0.25));
+}
+
+.clouds-2 {
+  background-image: url('/images/clouds_1.png');
+  animation: clouds-loop-2 var(--cloud-duration-2, 15s) infinite linear;
+  opacity: calc(0.08 + (var(--cloud-opacity) * 0.28));
+}
+
+.clouds-3 {
+  background-image: url('/images/clouds_3.png');
+  animation: clouds-loop-3 var(--cloud-duration-3, 17s) infinite linear;
+  opacity: calc(0.06 + (var(--cloud-opacity) * 0.22));
+}
+
+@keyframes fog-drift {
+  25% {
+    transform: translate3d(100px, 0, 0) rotate(0.01deg);
+  }
+  50% {
+    transform: translate3d(75px, -25px, 0) rotate(0.01deg);
+  }
+  75% {
+    transform: translate3d(45px, 30px, 0) rotate(0.01deg);
+  }
+  100% {
+    transform: translate3d(25px, -15px, 0) rotate(0.01deg);
+  }
+}
+
+@keyframes fog-drift-slow {
+  25% {
+    transform: translate3d(-80px, 10px, 0) rotate(0.01deg);
+  }
+  50% {
+    transform: translate3d(-40px, -20px, 0) rotate(0.01deg);
+  }
+  75% {
+    transform: translate3d(-20px, 25px, 0) rotate(0.01deg);
+  }
+  100% {
+    transform: translate3d(-10px, -10px, 0) rotate(0.01deg);
+  }
+}
+
+@keyframes fog-front {
+  25% {
+    transform: scale(1.08) translate3d(60px, -10px, 0) rotate(0.01deg);
+  }
+  50% {
+    transform: scale(1.1) translate3d(30px, 15px, 0) rotate(0.01deg);
+  }
+  75% {
+    transform: scale(1.06) translate3d(-10px, 25px, 0) rotate(0.01deg);
+  }
+  100% {
+    transform: scale(1.08) translate3d(-35px, -5px, 0) rotate(0.01deg);
+  }
+}
+
+@keyframes clouds-loop-1 {
+  to {
+    background-position: -1000px 0;
+  }
+}
+
+@keyframes clouds-loop-2 {
+  to {
+    background-position: -1000px 0;
+  }
+}
+
+@keyframes clouds-loop-3 {
+  to {
+    background-position: -1579px 0;
+  }
+}
