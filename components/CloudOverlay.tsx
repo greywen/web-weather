@@ -8,9 +8,9 @@ import { WeatherType } from './weather-types';
 export default function CloudOverlay({ forcedWeather, opacity = 1 }: { forcedWeather?: WeatherType; opacity?: number }) {
   const { weather, config } = useWeather();
   const effectiveWeather = forcedWeather ?? weather;
-  const isCloudy = effectiveWeather === 'cloudy';
+  const isCloudy = effectiveWeather === 'cloudy' || effectiveWeather === 'rainy';
 
-  const cloudCover = config.cloudCover ?? 0.5;
+  const cloudCover = config.cloudCover ?? 0.1;
   const speed = Math.max(0.2, config.speed ?? 1);
 
   const layer1Ref = useRef<HTMLDivElement | null>(null);
@@ -70,7 +70,7 @@ export default function CloudOverlay({ forcedWeather, opacity = 1 }: { forcedWea
     });
   }, [isCloudy, speed]);
 
-  if (!isCloudy || opacity <= 0) return null;
+  if (!isCloudy || opacity <= 0 || cloudCover <= 0) return null;
 
   return (
     <div

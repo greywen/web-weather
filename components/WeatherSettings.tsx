@@ -145,6 +145,25 @@ export default function WeatherSettings() {
 
                     {(weather === 'rainy' || weather === 'snowy') && (
                         <div className="space-y-5">
+                            {/* Cloud Cover (For Rainy) */}
+                            {weather === 'rainy' && (
+                                <div>
+                                    <div className="flex justify-between text-xs text-white/80 mb-1.5">
+                                        <span>云量覆盖</span>
+                                        <span className="font-mono text-white/50">{((config.cloudCover !== undefined ? config.cloudCover : 0.1) * 100).toFixed(0)}%</span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="1"
+                                        step="0.1"
+                                        value={config.cloudCover !== undefined ? config.cloudCover : 0.1}
+                                        onChange={(e) => handleConfigChange('cloudCover', parseFloat(e.target.value))}
+                                        className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                    />
+                                </div>
+                            )}
+
                             {/* Particle Count */}
                             <div>
                                 <div className="flex justify-between text-xs text-white/80 mb-1.5">
@@ -249,14 +268,14 @@ export default function WeatherSettings() {
                              <div>
                                 <div className="flex justify-between text-xs text-white/80 mb-1.5">
                                     <span>云量覆盖</span>
-                                    <span className="font-mono text-white/50">{((config.cloudCover !== undefined ? config.cloudCover : 0.5) * 100).toFixed(0)}%</span>
+                                    <span className="font-mono text-white/50">{((config.cloudCover !== undefined ? config.cloudCover : 0.1) * 100).toFixed(0)}%</span>
                                 </div>
                                 <input
                                     type="range"
                                     min="0"
                                     max="1"
                                     step="0.1"
-                                    value={config.cloudCover !== undefined ? config.cloudCover : 0.5}
+                                    value={config.cloudCover !== undefined ? config.cloudCover : 0.1}
                                     onChange={(e) => handleConfigChange('cloudCover', parseFloat(e.target.value))}
                                     className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
                                 />

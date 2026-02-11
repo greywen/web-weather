@@ -31,7 +31,7 @@ export const DEFAULT_CONFIG: WeatherConfig = {
   temperature: 0,
   time: 12, // Default noon
   thunder: false,
-  cloudCover: 0.5,
+  cloudCover: 0.1,
   fogDensity: 0.5,
 };
 
