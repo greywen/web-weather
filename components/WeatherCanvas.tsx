@@ -47,7 +47,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
     // 碰撞面在导航栏顶部
     const navBottomOffset = 24; 
     const navContentHeight = 80;
-    const groundLevel = height - navBottomOffset - navContentHeight;
+    let groundLevel = height - navBottomOffset - navContentHeight;
     let navLeftX = (width - navWidth) / 2;
     let navRightX = navLeftX + navWidth;
 
@@ -1006,6 +1006,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
       navWidth = Math.min(width * 0.9, 448);
       navLeftX = (width - navWidth) / 2;
       navRightX = navLeftX + navWidth;
+      groundLevel = height - navBottomOffset - navContentHeight;
 
       canvas.width = width;
       canvas.height = height;
