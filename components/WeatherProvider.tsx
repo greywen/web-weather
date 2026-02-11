@@ -37,7 +37,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
     const [transitionProgress, setTransitionProgressState] = useState<number>(1);
     const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
       const [transitionConfig, setTransitionConfigState] = useState<WeatherTransitionConfig>({
-          duration: 2.4,
+          duration: 0.5,
       });
     const transitionRafRef = useRef<number | null>(null);
   // Initialize time with current hour
@@ -48,7 +48,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
           time: now.getHours() + now.getMinutes() / 60
       };
   });
-  const [isAuto, setIsAuto] = useState<boolean>(true);
+    const [isAuto, setIsAuto] = useState<boolean>(false);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
 
   const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
@@ -318,14 +318,6 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
                 <FogOverlay forcedWeather={transitionTo} opacity={toOpacity} />
         
         <main className="relative z-10 p-10 text-white flex flex-col items-center">
-             {/* Auto Mode Indicator */}
-             <div 
-                onClick={toggleAuto}
-                className={`cursor-pointer mb-4 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest transition-all ${isAuto ? 'bg-green-500/80 text-white' : 'bg-white/10 text-white/50 border border-white/10'}`}
-             >
-                {isAuto ? 'Local Auto Mode' : 'Manual Mode'}
-             </div>
-             
             {children}
 
              {/* Live Data Display (Optional Debug) */}

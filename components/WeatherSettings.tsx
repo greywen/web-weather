@@ -5,7 +5,7 @@ import { useWeather } from './WeatherProvider';
 import { WeatherType } from './weather-types';
 
 export default function WeatherSettings() {
-    const { weather, setWeather, config, setConfig, transition, setTransitionConfig } = useWeather();
+    const { weather, setWeather, config, setConfig, transition, setTransitionConfig, isAuto, toggleAuto } = useWeather();
     const [isOpen, setIsOpen] = useState(true);
 
     useEffect(() => {
@@ -47,6 +47,20 @@ export default function WeatherSettings() {
                 </div>
 
             <div className="space-y-6">
+                {/* Mode Toggle */}
+                <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                    <div className="flex flex-col">
+                        <span className="text-xs text-white/80">模式</span>
+                        <span className="text-[10px] text-white/40">自动（定位获取）/ 手动</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={toggleAuto}
+                        className={`text-xs font-semibold px-2.5 py-1 rounded-full transition-all ${isAuto ? 'bg-green-500/80 text-white' : 'bg-white/10 text-white/60 border border-white/10'}`}
+                    >
+                        {isAuto ? '自动' : '手动'}
+                    </button>
+                </div>
                 {/* 1. Global Time Control (Applies to all weathers) */}
                 <div className="space-y-4 pt-2 border-b border-white/5 pb-6">
                     <div>

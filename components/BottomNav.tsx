@@ -13,7 +13,7 @@ export default function BottomNav() {
     { type: 'sunny', icon: <Sun size={24} />, label: 'Sunny' },
     { type: 'rainy', icon: <CloudRain size={24} />, label: 'Rainy' },
     { type: 'snowy', icon: <Snowflake size={24} />, label: 'Snowy' },
-    { type: 'icy', icon: <Cloud size={24} />, label: 'Icy' }, // Using Cloud as placeholder for Icy
+    { type: 'cloudy', icon: <Cloud size={24} />, label: 'Cloudy' },
   ];
 
   return (
