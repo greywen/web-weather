@@ -7,19 +7,26 @@ interface WeatherCanvasProps {
   weather: WeatherType;
   sunProgress: number;
   config: WeatherConfig;
+  opacity?: number;
+  className?: string;
 }
 
-export default function WeatherCanvas({ weather, sunProgress, config }: WeatherCanvasProps) {
+export default function WeatherCanvas({ weather, sunProgress, config, opacity = 1, className = '' }: WeatherCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>(0);
   
   // 使用 Ref 存储最新配置，避免 useEffect 重复触发导致动画重置
   const configRef = useRef(config);
+  const opacityRef = useRef(opacity);
   
   // 每次渲染都更新 Ref
   useEffect(() => {
     configRef.current = config;
   }, [config]);
+
+  useEffect(() => {
+    opacityRef.current = opacity;
+  }, [opacity]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -863,6 +870,8 @@ export default function WeatherCanvas({ weather, sunProgress, config }: WeatherC
         // Combine natural daily cycle with config intensity
         const sunCycle = Math.sin(Math.max(0, Math.min(1, calculatedProgress)) * Math.PI) * 0.7 + 0.3;
         const currentIntensity = sunCycle * intensity; 
+        const sunFade = Math.pow(Math.max(0, Math.min(1, opacityRef.current)), 1.8);
+        const adjustedIntensity = currentIntensity * sunFade;
 
         // 只有当太阳在合理范围内才绘制 (或根据设计意图一直绘制但位置偏移)
         // 这里简单处理：如果彻底晚上了(prog < -0.2 or > 1.2), 就不画太阳了？
@@ -870,22 +879,24 @@ export default function WeatherCanvas({ weather, sunProgress, config }: WeatherC
         // 暂时保持绘制。
 
         // 1. 绘制太阳主体 (辉光)
-        sunEffect.drawSun(ctx, sunX, sunY, currentIntensity);
+        if (adjustedIntensity > 0.01) {
+          sunEffect.drawSun(ctx, sunX, sunY, adjustedIntensity);
 
-        // 2. 绘制镜头光斑
-        sunEffect.drawFlares(ctx, sunX, sunY, width, height, currentIntensity);
+          // 2. 绘制镜头光斑
+          sunEffect.drawFlares(ctx, sunX, sunY, width, height, adjustedIntensity);
         
-        // 3. 绘制底部导航栏专属光效 (新增)
-        sunEffect.drawBottomGlow(
-          ctx,
-          sunX,
-          width,
-          navLeftX,
-          navRightX,
-          groundLevel,
-          navContentHeight,
-          currentIntensity
-        );
+          // 3. 绘制底部导航栏专属光效 (新增)
+          sunEffect.drawBottomGlow(
+            ctx,
+            sunX,
+            width,
+            navLeftX,
+            navRightX,
+            groundLevel,
+            navContentHeight,
+            adjustedIntensity
+          );
+        }
       }
       
       // RAINY
@@ -1011,7 +1022,8 @@ export default function WeatherCanvas({ weather, sunProgress, config }: WeatherC
   return (
     <canvas
       ref={canvasRef}
-      className="absolute top-0 left-0 w-full h-full pointer-events-none z-0"
+      className={`absolute top-0 left-0 w-full h-full pointer-events-none transition-opacity duration-700 ${className}`}
+      style={{ opacity }}
     />
   );
 }

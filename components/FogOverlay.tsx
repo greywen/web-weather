@@ -2,18 +2,20 @@
 
 import type { CSSProperties } from 'react';
 import { useWeather } from './WeatherProvider';
+import { WeatherType } from './weather-types';
 
-export default function FogOverlay() {
+export default function FogOverlay({ forcedWeather, opacity = 1 }: { forcedWeather?: WeatherType; opacity?: number }) {
   const { weather, config } = useWeather();
+  const effectiveWeather = forcedWeather ?? weather;
 
-  if (weather !== 'foggy') return null;
+  if (effectiveWeather !== 'foggy' || opacity <= 0) return null;
 
   const density = config.fogDensity ?? 0.5;
 
   return (
     <div
       className="fog-overlay"
-      style={{ '--fog-density': density } as CSSProperties}
+      style={{ '--fog-density': density, opacity } as CSSProperties}
       aria-hidden="true"
     >
       <div className="fog-layer fog-base" />

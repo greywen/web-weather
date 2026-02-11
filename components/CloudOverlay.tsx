@@ -3,11 +3,12 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useRef } from 'react';
 import { useWeather } from './WeatherProvider';
+import { WeatherType } from './weather-types';
 
-export default function CloudOverlay() {
+export default function CloudOverlay({ forcedWeather, opacity = 1 }: { forcedWeather?: WeatherType; opacity?: number }) {
   const { weather, config } = useWeather();
-
-  const isCloudy = weather === 'cloudy';
+  const effectiveWeather = forcedWeather ?? weather;
+  const isCloudy = effectiveWeather === 'cloudy';
 
   const cloudCover = config.cloudCover ?? 0.5;
   const speed = Math.max(0.2, config.speed ?? 1);
@@ -69,13 +70,14 @@ export default function CloudOverlay() {
     });
   }, [isCloudy, speed]);
 
-  if (!isCloudy) return null;
+  if (!isCloudy || opacity <= 0) return null;
 
   return (
     <div
       className="clouds-overlay"
       style={{
         '--cloud-opacity': cloudCover,
+        opacity,
       } as CSSProperties}
       aria-hidden="true"
     >

@@ -12,6 +12,17 @@ export interface WeatherConfig {
   fogDensity?: number;   // 0-1 for foggy
 }
 
+export interface WeatherTransitionConfig {
+  duration: number; // seconds
+}
+
+export interface WeatherTransitionState extends WeatherTransitionConfig {
+  from: WeatherType;
+  to: WeatherType;
+  progress: number; // 0-1
+  active: boolean;
+}
+
 export const DEFAULT_CONFIG: WeatherConfig = {
   particleCount: 100,
   speed: 1,

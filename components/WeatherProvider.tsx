@@ -1,7 +1,7 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { WeatherType, WeatherData, WeatherConfig, DEFAULT_CONFIG } from './weather-types';
+import { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import { WeatherType, WeatherData, WeatherConfig, DEFAULT_CONFIG, WeatherTransitionConfig, WeatherTransitionState } from './weather-types';
 import WeatherCanvas from './WeatherCanvas';
 import FogOverlay from './FogOverlay';
 import CloudOverlay from './CloudOverlay';
@@ -15,6 +15,8 @@ interface WeatherContextType {
   weatherData: WeatherData | null;
   config: WeatherConfig;
   setConfig: (config: Partial<WeatherConfig>) => void;
+    transition: WeatherTransitionState;
+    setTransitionConfig: (config: Partial<WeatherTransitionConfig>) => void;
 }
 
 const WeatherContext = createContext<WeatherContextType | undefined>(undefined);
@@ -28,7 +30,16 @@ export const useWeather = () => {
 };
 
 export const WeatherProvider = ({ children }: { children: ReactNode }) => {
-  const [weather, setWeather] = useState<WeatherType>('sunny');
+    const [weather, setWeatherState] = useState<WeatherType>('sunny');
+    const [currentWeather, setCurrentWeather] = useState<WeatherType>('sunny');
+    const [transitionFrom, setTransitionFrom] = useState<WeatherType>('sunny');
+    const [transitionTo, setTransitionTo] = useState<WeatherType>('sunny');
+    const [transitionProgress, setTransitionProgressState] = useState<number>(1);
+    const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
+      const [transitionConfig, setTransitionConfigState] = useState<WeatherTransitionConfig>({
+          duration: 2.4,
+      });
+    const transitionRafRef = useRef<number | null>(null);
   // Initialize time with current hour
   const [config, setConfigState] = useState<WeatherConfig>(() => {
       const now = new Date();
@@ -40,9 +51,44 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
   const [isAuto, setIsAuto] = useState<boolean>(true);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
 
+  const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+
+  const finalizeTransition = (next: WeatherType) => {
+      setIsTransitioning(false);
+      setCurrentWeather(next);
+      setTransitionFrom(next);
+      setTransitionTo(next);
+      setTransitionProgressState(1);
+  };
+
+  const startTransition = (next: WeatherType, startAt = 0) => {
+      if (transitionRafRef.current) {
+          cancelAnimationFrame(transitionRafRef.current);
+      }
+      const durationMs = Math.max(0.2, transitionConfig.duration) * 1000;
+      const startTime = performance.now() - startAt * durationMs;
+      setIsTransitioning(true);
+
+      const tick = (now: number) => {
+          const t = Math.min(1, (now - startTime) / durationMs);
+          setTransitionProgressState(t);
+          if (t < 1) {
+              transitionRafRef.current = requestAnimationFrame(tick);
+          } else {
+              finalizeTransition(next);
+          }
+      };
+
+      transitionRafRef.current = requestAnimationFrame(tick);
+  };
+
   const setConfig = (newConfig: Partial<WeatherConfig>) => {
       setConfigState(prev => ({ ...prev, ...newConfig }));
       setIsAuto(false); // Manually changing config disables auto mode usually
+  };
+
+  const setTransitionConfig = (newConfig: Partial<WeatherTransitionConfig>) => {
+      setTransitionConfigState(prev => ({ ...prev, ...newConfig }));
   };
 
   // WMO Weather Code Mapping to our types
@@ -93,7 +139,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
           });
           
           if (isAuto) {
-              setWeather(newWeatherType);
+              applyWeather(newWeatherType, false);
           }
 
       } catch (err) {
@@ -148,18 +194,46 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [isAuto]);
 
+  useEffect(() => {
+      if (transitionFrom !== transitionTo && transitionProgress < 1) {
+          startTransition(transitionTo, transitionProgress);
+      }
+  }, [transitionFrom, transitionTo]);
+
+  useEffect(() => {
+      return () => {
+          if (transitionRafRef.current) {
+              cancelAnimationFrame(transitionRafRef.current);
+          }
+      };
+  }, []);
+
   const toggleAuto = () => setIsAuto(!isAuto);
 
   // Manual override handler
-  const handleManualSetWeather = (w: WeatherType) => {
-      setIsAuto(false);
-      setWeather(w);
+  const applyWeather = (w: WeatherType, disableAuto = true) => {
+      if (disableAuto) {
+          setIsAuto(false);
+      }
+      setWeatherState(w);
+
+      const from = isTransitioning
+          ? (transitionProgress < 0.5 ? transitionFrom : transitionTo)
+          : currentWeather;
+
+      setTransitionFrom(from);
+      setTransitionTo(w);
+      setTransitionProgressState(0);
+
+      startTransition(w, 0);
+
       // Create fake data for manual mode to ensure visualizations still work
       setWeatherData(prev => ({
-          ...prev!,
           type: w,
+          temperature: prev?.temperature ?? 0,
           isDay: true,
-          sunProgress: 0.5 // Default to noon for manual mode
+          sunProgress: 0.5, // Default to noon for manual mode
+          locationName: prev?.locationName ?? 'Manual Mode'
       }));
   };
 
@@ -176,27 +250,72 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+    const easedProgress = easeInOut(transitionProgress);
+    const isBlending = transitionFrom !== transitionTo && isTransitioning;
+  const fromOpacity = isBlending ? 1 - easedProgress : 0;
+    const toOpacity = isBlending ? easedProgress : 1;
+
+  const transitionState: WeatherTransitionState = {
+      from: transitionFrom,
+      to: transitionTo,
+      progress: transitionProgress,
+      active: isBlending && transitionProgress < 1,
+      duration: transitionConfig.duration,
+  };
+
   return (
     <WeatherContext.Provider 
         value={{ 
             weather, 
-            setWeather: handleManualSetWeather, 
+            setWeather: (w: WeatherType) => applyWeather(w, true), 
             isAuto, 
             toggleAuto, 
             weatherData,
             config,
-            setConfig 
+            setConfig,
+            transition: transitionState,
+            setTransitionConfig
         }}
     >
-            <div className={`min-h-screen relative overflow-hidden transition-colors duration-1000 ${getBackgroundClass(weather)}`}>
+            <div className="min-h-screen relative overflow-hidden">
+                {/* Background crossfade */}
+                <div
+                    className={`absolute inset-0 transition-opacity duration-700 ${getBackgroundClass(transitionFrom)}`}
+                    style={{ opacity: fromOpacity }}
+                />
+                <div
+                    className={`absolute inset-0 transition-opacity duration-700 ${getBackgroundClass(transitionTo)}`}
+                    style={{ opacity: toOpacity }}
+                />
+
                 {/* Weather Particle Layer - Now passing sunProgress and config */}
+                {isBlending && (
+                    <WeatherCanvas 
+                            weather={transitionFrom} 
+                            sunProgress={weatherData?.sunProgress ?? 0.5} 
+                            config={config}
+                            opacity={fromOpacity}
+                            className="z-0"
+                    />
+                )}
                 <WeatherCanvas 
-                        weather={weather} 
+                        weather={transitionTo} 
                         sunProgress={weatherData?.sunProgress ?? 0.5} 
                         config={config}
+                        opacity={toOpacity}
+                        className="z-0"
                 />
-                <CloudOverlay />
-                <FogOverlay />
+
+                {/* Overlays crossfade */}
+                {isBlending && (
+                    <CloudOverlay forcedWeather={transitionFrom} opacity={fromOpacity} />
+                )}
+                <CloudOverlay forcedWeather={transitionTo} opacity={toOpacity} />
+
+                {isBlending && (
+                    <FogOverlay forcedWeather={transitionFrom} opacity={fromOpacity} />
+                )}
+                <FogOverlay forcedWeather={transitionTo} opacity={toOpacity} />
         
         <main className="relative z-10 p-10 text-white flex flex-col items-center">
              {/* Auto Mode Indicator */}
@@ -218,8 +337,8 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
              )}
         </main>
         
-        {/* Dock Navigation */}
-        <BottomNav />
+                {/* Dock Navigation */}
+                <BottomNav />
       </div>
     </WeatherContext.Provider>
   );

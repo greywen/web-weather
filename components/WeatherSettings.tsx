@@ -5,7 +5,7 @@ import { useWeather } from './WeatherProvider';
 import { WeatherType } from './weather-types';
 
 export default function WeatherSettings() {
-    const { weather, setWeather, config, setConfig } = useWeather();
+    const { weather, setWeather, config, setConfig, transition, setTransitionConfig } = useWeather();
     const [isOpen, setIsOpen] = useState(true);
 
     useEffect(() => {
@@ -51,7 +51,7 @@ export default function WeatherSettings() {
                 <div className="space-y-4 pt-2 border-b border-white/5 pb-6">
                     <div>
                         <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                            <span className="flex items-center gap-1">🕒 时间 (24h)</span>
+                            <span className="flex items-center gap-1">时间 (24h)</span>
                             <span className="font-mono text-white/50">
                                 {Math.floor(config.time || 12).toString().padStart(2,'0')}:
                                 {Math.floor(((config.time || 12) % 1) * 60).toString().padStart(2,'0')}
@@ -71,6 +71,23 @@ export default function WeatherSettings() {
                             <span>☀️ 12:00</span>
                             <span>🌑 24:00</span>
                         </div>
+                    </div>
+
+                    {/* Transition Duration */}
+                    <div className="pt-3">
+                        <div className="flex justify-between text-xs text-white/80 mb-1.5">
+                            <span>转场时长</span>
+                            <span className="font-mono text-white/50">{transition.duration.toFixed(1)}s</span>
+                        </div>
+                        <input
+                            type="range"
+                            min="0.5"
+                            max="8"
+                            step="0.1"
+                            value={transition.duration}
+                            onChange={(e) => setTransitionConfig({ duration: parseFloat(e.target.value) })}
+                            className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                        />
                     </div>
                 </div>
 
