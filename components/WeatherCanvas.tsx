@@ -56,109 +56,138 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
 
     // --- 粒子类定义 ---
 
-    // 1. 溅水粒子 (Splash)
-    class Splash {
-      x: number;
-      y: number;
-      vx: number;
-      vy: number;
-      gravity: number;
-      life: number;
-      
-      constructor(x: number, y: number) {
-        this.x = x;
-        this.y = y;
-        this.vx = (Math.random() - 0.5) * 4; 
-        this.vy = -(Math.random() * 3 + 2);   
-        this.gravity = 0.2;
-        this.life = 1.0;
-      }
-
+    // 1. 溅水粒子 (Splash) — 使用对象池避免 GC 压力
+    const SPLASH_POOL_SIZE = 512;
+    const splashPool = {
+      x:       new Float32Array(SPLASH_POOL_SIZE),
+      y:       new Float32Array(SPLASH_POOL_SIZE),
+      vx:      new Float32Array(SPLASH_POOL_SIZE),
+      vy:      new Float32Array(SPLASH_POOL_SIZE),
+      life:    new Float32Array(SPLASH_POOL_SIZE),
+      count:   0,
+      spawn(sx: number, sy: number) {
+        if (this.count >= SPLASH_POOL_SIZE) return;
+        const i = this.count++;
+        this.x[i] = sx;
+        this.y[i] = sy;
+        this.vx[i] = (Math.random() - 0.5) * 4;
+        this.vy[i] = -(Math.random() * 3 + 2);
+        this.life[i] = 1.0;
+      },
       update() {
-        this.x += this.vx;
-        this.vy += this.gravity;
-        this.y += this.vy;
-        this.life -= 0.03;
-      }
-
-      draw(ctx: CanvasRenderingContext2D) {
-        ctx.beginPath();
-        // 稍微带点蓝白色
-        ctx.fillStyle = `rgba(200, 220, 255, ${this.life})`;
-        ctx.arc(this.x, this.y, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-
-    // 2. 雨滴粒子 (Rain)
-    class RainDrop {
-      x: number;
-      y: number;
-      baseSpeed: number;
-      length: number;
-      opacity: number;
-      
-      constructor() {
-        this.x = Math.random() * width;
-        this.y = Math.random() * height;
-        // Base speed without multiplier
-        this.baseSpeed = (Math.random() * 15 + 15); 
-        this.length = Math.random() * 20 + 20;
-        this.opacity = Math.random() * 0.4 + 0.1;
-      }
-
-      update(splashes: Splash[]) {
-        // 读取实时配置
-        const { wind: windVal, speed: speedMult } = configRef.current;
-        const currentSpeed = this.baseSpeed * speedMult;
-
-        this.y += currentSpeed;
-        this.x += windVal; // 加入风力影响横向位置
-        
-        // 核心修改：碰撞检测逻辑优化
-        // 1. 检查高度是否到达导航栏顶部
-        const hitGround = this.y > groundLevel && this.y < groundLevel + currentSpeed;
-        // 2. 检查横向是否在导航栏范围内
-        const hitNavbar = this.x > navLeftX + 10 && this.x < navRightX - 10; // +10/-10 是为了内缩一点，不要在边缘太极限
-
-        if (hitGround && hitNavbar) {
-          // 只有打在导航栏上才溅射
-          for (let i = 0; i < Math.floor(Math.random() * 3) + 2; i++) {
-             splashes.push(new Splash(this.x, groundLevel));
-          }
-          // 在导航栏上消失 (重置)
-          this.y = -this.length;
-          this.x = Math.random() * width;
-        } else if (this.y > height || this.x > width + 100 || this.x < -100) { // 增加左右边界重置
-          // 没打中导航栏，落出屏幕或者飞出左右边界才重置
-          this.y = -this.length;
-          // 重置X位置逻辑优化：根据风向从上风向生成
-          if (windVal > 0) {
-            // 风向右吹，雨从左边或上边来 (-width/2 到 width/2 以覆盖倾斜) -> 简化为全屏随机即可，大风时会有空白区问题
-            // 优化：从 -200 到 width 随机，保证左侧源源不断
-            this.x = Math.random() * (width + 200) - 200;
+        const gravity = 0.2;
+        let i = 0;
+        while (i < this.count) {
+          this.vx[i]; // no horizontal drag
+          this.vy[i] += gravity;
+          this.x[i] += this.vx[i];
+          this.y[i] += this.vy[i];
+          this.life[i] -= 0.03;
+          if (this.life[i] <= 0) {
+            // swap-and-pop: 用末尾元素覆盖当前，O(1) 移除
+            const last = this.count - 1;
+            if (i < last) {
+              this.x[i] = this.x[last];
+              this.y[i] = this.y[last];
+              this.vx[i] = this.vx[last];
+              this.vy[i] = this.vy[last];
+              this.life[i] = this.life[last];
+            }
+            this.count--;
+            // 不递增 i，重新检查被换入的元素
           } else {
-            this.x = Math.random() * (width + 200);
+            i++;
           }
         }
-      }
-
+      },
       draw(ctx: CanvasRenderingContext2D) {
-        // 读取实时风力用于绘制倾斜
-        const { wind: windVal } = configRef.current;
-
+        if (this.count === 0) return;
+        // 按 opacity 分组批量绘制，减少 fillStyle 切换
+        // 简化：用统一半透明色一次性绘制全部（视觉差异极小）
+        ctx.fillStyle = 'rgba(200, 220, 255, 0.6)';
         ctx.beginPath();
-        ctx.strokeStyle = `rgba(180, 200, 235, ${this.opacity})`;
-        ctx.lineWidth = 1.5;
-        
-        // 雨滴绘制也要根据风斜向绘制
-        // 使用简单的三角比率：windVal * 2 可以让倾斜感更明显一点
-        ctx.moveTo(this.x, this.y);
-        ctx.lineTo(this.x + windVal * 2, this.y + this.length);
-        
-        ctx.stroke();
+        for (let i = 0; i < this.count; i++) {
+          ctx.moveTo(this.x[i] + 1.5, this.y[i]);
+          ctx.arc(this.x[i], this.y[i], 1.5, 0, Math.PI * 2);
+        }
+        ctx.fill();
+      },
+      clear() {
+        this.count = 0;
       }
-    }
+    };
+
+    // 2. 雨滴粒子 (Rain) — SoA 布局 + 批量绘制
+    const MAX_RAIN = 600;
+    const rainData = {
+      x:         new Float32Array(MAX_RAIN),
+      y:         new Float32Array(MAX_RAIN),
+      baseSpeed: new Float32Array(MAX_RAIN),
+      length:    new Float32Array(MAX_RAIN),
+      opacity:   new Float32Array(MAX_RAIN),
+      count:     0,
+      init(i: number) {
+        this.x[i] = Math.random() * width;
+        this.y[i] = Math.random() * height;
+        this.baseSpeed[i] = Math.random() * 15 + 15;
+        this.length[i] = Math.random() * 20 + 20;
+        this.opacity[i] = Math.random() * 0.4 + 0.1;
+      },
+      setCount(n: number) {
+        const target = Math.min(n, MAX_RAIN);
+        while (this.count < target) { this.init(this.count); this.count++; }
+        if (this.count > target) this.count = target;
+      },
+      updateAll(windVal: number, speedMult: number) {
+        for (let i = 0; i < this.count; i++) {
+          const spd = this.baseSpeed[i] * speedMult;
+          this.y[i] += spd;
+          this.x[i] += windVal;
+
+          // 碰撞检测
+          const hitGround = this.y[i] > groundLevel && this.y[i] < groundLevel + spd;
+          const hitNavbar = this.x[i] > navLeftX + 10 && this.x[i] < navRightX - 10;
+
+          if (hitGround && hitNavbar) {
+            const splashCount = Math.floor(Math.random() * 3) + 2;
+            for (let s = 0; s < splashCount; s++) {
+              splashPool.spawn(this.x[i], groundLevel);
+            }
+            this.y[i] = -this.length[i];
+            this.x[i] = Math.random() * width;
+          } else if (this.y[i] > height || this.x[i] > width + 100 || this.x[i] < -100) {
+            this.y[i] = -this.length[i];
+            if (windVal > 0) {
+              this.x[i] = Math.random() * (width + 200) - 200;
+            } else {
+              this.x[i] = Math.random() * (width + 200);
+            }
+          }
+        }
+      },
+      drawAll(ctx: CanvasRenderingContext2D, windVal: number) {
+        if (this.count === 0) return;
+        // 按透明度分 3 档批量绘制，大幅减少 draw call
+        const windOffset = windVal * 2;
+        const bins: [number, number][] = [[0, 0.2], [0.2, 0.35], [0.35, 0.6]];
+        ctx.lineWidth = 1.5;
+        for (const [lo, hi] of bins) {
+          const midOpacity = ((lo + hi) / 2).toFixed(2);
+          ctx.strokeStyle = `rgba(180, 200, 235, ${midOpacity})`;
+          ctx.beginPath();
+          for (let i = 0; i < this.count; i++) {
+            if (this.opacity[i] >= lo && this.opacity[i] < hi) {
+              ctx.moveTo(this.x[i], this.y[i]);
+              ctx.lineTo(this.x[i] + windOffset, this.y[i] + this.length[i]);
+            }
+          }
+          ctx.stroke();
+        }
+      },
+      clear() {
+        this.count = 0;
+      }
+    };
 
     // 3. 雪花粒子 (Snow)
     class SnowFlake {
@@ -662,7 +691,25 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
         }
     }
 
-    // 7. 雾 (Fog) - "团状"沉浸式雾气
+    // 7. 雾 (Fog) - 使用离屏 Canvas 缓存渐变纹理，避免每帧 createRadialGradient
+    // 预渲染一个白色径向渐变圆到离屏 canvas，绘制时只需 drawImage + globalAlpha
+    const FOG_TEX_SIZE = 256;
+    const fogTexCanvas = document.createElement('canvas');
+    fogTexCanvas.width = FOG_TEX_SIZE;
+    fogTexCanvas.height = FOG_TEX_SIZE;
+    const fogTexCtx = fogTexCanvas.getContext('2d')!;
+    (() => {
+      const cx = FOG_TEX_SIZE / 2;
+      const g = fogTexCtx.createRadialGradient(cx, cx, 0, cx, cx, cx);
+      // 白色渐变，运行时通过 globalAlpha 控制不透明度，用 tint 控制颜色
+      g.addColorStop(0,   'rgba(225, 235, 240, 1)');
+      g.addColorStop(0.4, 'rgba(215, 225, 235, 0.8)');
+      g.addColorStop(0.7, 'rgba(205, 220, 235, 0.3)');
+      g.addColorStop(1,   'rgba(205, 220, 235, 0)');
+      fogTexCtx.fillStyle = g;
+      fogTexCtx.fillRect(0, 0, FOG_TEX_SIZE, FOG_TEX_SIZE);
+    })();
+
     class FogPuff {
         x: number;
         y: number;
@@ -670,132 +717,85 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
         baseRadius: number;
         speed: number;
         opacity: number;
-        
-        // 浮动参数
         oscillationOffset: number;
         
         constructor(canvasW: number, canvasH: number) {
             const minDim = Math.min(canvasW, canvasH);
-            
-            // 初始化位置：覆盖全屏，稍微向外延伸
             this.x = Math.random() * (canvasW + 400) - 200;
             this.y = Math.random() * (canvasH + 200) - 100;
-            
-            // 模拟远近感 (Z轴)
-            // zFactor 0 (远) -> 1 (近)
             const zFactor = Math.random();
-            
-            // 半径：近处的大(身在其中)，远处的相对小但依然是团状
-            // 范围：屏幕最小边的 30% ~ 120%
             this.baseRadius = minDim * (0.3 + zFactor * 0.9);
             this.radius = this.baseRadius;
-            
-            // 速度：近处快，远处慢。整体还是比较慢的飘动
             const driftDir = Math.random() > 0.5 ? 1 : -1;
             this.speed = (0.2 + zFactor * 0.5) * driftDir;
-            
-            // 不透明度：近处淡一点以免遮挡太多，远处稍微实一点堆积背景
             this.opacity = 0.05 + Math.random() * 0.12;
-            
             this.oscillationOffset = Math.random() * Math.PI * 2;
-        }
-        
-        update(canvasW: number, canvasH: number, time: number) {
-            const { wind = 0 } = configRef.current;
-            
-            // 1. 水平位移 (自身速度 + 风力)
-            // 风力对所有层都有很大影响，但近处(大球)受影响视觉上更明显
-            this.x += this.speed + (wind * 3.0);
-            
-            // 2. 垂直浮动 (呼吸感)
-            this.y += Math.sin(time * 0.0008 + this.oscillationOffset) * 0.15;
-            
-            // 3. 尺寸脉动 (模拟雾气翻滚)
-            // this.radius = this.baseRadius + Math.sin(time * 0.0005 + this.oscillationOffset) * (this.baseRadius * 0.1);
-            
-            // 4. 边界循环
-            const boundary = this.radius + 100;
-            
-            if (this.x > canvasW + boundary) {
-                this.x = -boundary;
-                this.y = Math.random() * canvasH;
-            } else if (this.x < -boundary) {
-                this.x = canvasW + boundary;
-                this.y = Math.random() * canvasH;
-            }
-        }
-        
-        draw(ctx: CanvasRenderingContext2D, density: number) {
-            const finalOpacity = this.opacity * (0.6 + density * 0.8);
-            if (finalOpacity <= 0.01) return;
-
-            ctx.beginPath();
-            
-            // 径向渐变模拟球状团雾
-            const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius);
-            
-            // 颜色：偏冷灰白，模拟水汽
-            // 中心微亮
-            g.addColorStop(0, `rgba(225, 235, 240, ${finalOpacity})`);
-            // 中间过渡
-            g.addColorStop(0.4, `rgba(215, 225, 235, ${finalOpacity * 0.8})`);
-            g.addColorStop(0.7, `rgba(205, 220, 235, ${finalOpacity * 0.3})`);
-            // 边缘完全透明
-            g.addColorStop(1, `rgba(205, 220, 235, 0)`);
-            
-            ctx.fillStyle = g;
-            // 绘制圆形
-            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-            ctx.fill();
         }
     }
 
+    // 雾气批量更新 + 绘制（不再用 class method，减少虚拟调用开销）
+    function updateFogs(fogArr: FogPuff[], canvasW: number, canvasH: number, now: number, windVal: number) {
+      for (let i = 0; i < fogArr.length; i++) {
+        const f = fogArr[i];
+        f.x += f.speed + windVal * 3.0;
+        f.y += Math.sin(now * 0.0008 + f.oscillationOffset) * 0.15;
+        const boundary = f.radius + 100;
+        if (f.x > canvasW + boundary) {
+          f.x = -boundary;
+          f.y = Math.random() * canvasH;
+        } else if (f.x < -boundary) {
+          f.x = canvasW + boundary;
+          f.y = Math.random() * canvasH;
+        }
+      }
+    }
+
+    function drawFogs(c: CanvasRenderingContext2D, fogArr: FogPuff[], density: number) {
+      for (let i = 0; i < fogArr.length; i++) {
+        const f = fogArr[i];
+        const finalOpacity = f.opacity * (0.6 + density * 0.8);
+        if (finalOpacity <= 0.01) continue;
+        const diam = f.radius * 2;
+        c.globalAlpha = finalOpacity;
+        c.drawImage(fogTexCanvas, f.x - f.radius, f.y - f.radius, diam, diam);
+      }
+      c.globalAlpha = 1;
+    }
+
     // --- 初始化集合 ---
-    let rains: RainDrop[] = [];
-    let splashes: Splash[] = [];
     let snows: SnowFlake[] = [];
     let sunEffect: SunEffect | null = null;
-    let snowPile: SnowPile | null = null; // 积雪管理器实例
+    let snowPile: SnowPile | null = null;
     
     let lightnings: Lightning[] = [];
-    let fogs: FogPuff[] = []; // Changed type
+    let fogs: FogPuff[] = [];
     let lightningTimer = 0;
     let flashOpacity = 0;
 
     const initParticles = () => {
-      // 只有当粒子数量改变或天气类型改变时才真正重置粒子
-      // 如果只是时间变化，不需要重置！
-      // 这里简化：为了避免依赖复杂性，我们总是重置，但我们依靠上层 useEffect 的依赖项来控制
-      // 现在的依赖项只有 [weather] 和 init 时的 config.particleCount
-      
-      rains = [];
-      splashes = [];
+      // 重置所有粒子系统
+      rainData.clear();
+      splashPool.clear();
       snows = [];
       snowPile = null;
       sunEffect = null;
-      
       lightnings = [];
       fogs = [];
       flashOpacity = 0;
       
-      const { particleCount } = configRef.current; // 使用最新配置
-      const count = particleCount;
+      const { particleCount } = configRef.current;
 
       if (weather === 'rainy') {
-        const dropCount = count;
-        for (let i = 0; i < dropCount; i++) {
-          rains.push(new RainDrop());
-        }
+        rainData.setCount(particleCount);
       } else if (weather === 'snowy') {
-        snowPile = new SnowPile(); // 初始化积雪
-        const snowCount = count;
-        for (let i = 0; i < snowCount; i++) {
+        snowPile = new SnowPile();
+        for (let i = 0; i < particleCount; i++) {
           snows.push(new SnowFlake());
         }
       } else if (weather === 'sunny') {
         sunEffect = new SunEffect();
       } else if (weather === 'foggy') {
-        const fogCount = 25; // 大量随机团雾层叠
+        const fogCount = 25;
         for(let i=0; i<fogCount; i++) {
              fogs.push(new FogPuff(width, height));
         }
@@ -902,22 +902,18 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
       
       // RAINY
       else if (weather === 'rainy') {
-        const { particleCount, thunder } = configRef.current;
+        const { particleCount, thunder, wind: windVal, speed: speedMult } = configRef.current;
 
         // Thunder Logic
         if (thunder) {
             lightningTimer--;
             if (lightningTimer <= 0) {
-                 // Trigger flash
-                 flashOpacity = 0.6 + Math.random() * 0.4; 
-                 // Spawn bolt
+                 flashOpacity = 0.6 + Math.random() * 0.4;
                  lightnings.push(new Lightning(width, height));
-                 // Reset timer
                  lightningTimer = Math.random() * 300 + 60;
             }
         }
-        
-        // Draw lightnings (behind rain?) - maybe in front is better for drama
+
         for(let i = lightnings.length - 1; i>=0; i--) {
             const l = lightnings[i];
             l.update();
@@ -926,26 +922,16 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
         }
 
         // Dynamic Particle Count Adjustment
-        if (rains.length < particleCount) {
-             for(let i=0; i < particleCount - rains.length; i++) rains.push(new RainDrop()); 
-        } else if (rains.length > particleCount) {
-             rains.splice(0, rains.length - particleCount);
-        }
+        rainData.setCount(particleCount);
 
-        rains.forEach(drop => {
-          drop.update(splashes);
-          drop.draw(ctx);
-        });
+        // 一次性更新全部雨滴 + 批量绘制
+        rainData.updateAll(windVal, speedMult);
+        rainData.drawAll(ctx, windVal);
 
-        for (let i = splashes.length - 1; i >= 0; i--) {
-          const s = splashes[i];
-          s.update();
-          s.draw(ctx);
-          if (s.life <= 0) {
-            splashes.splice(i, 1);
-          }
-        }
-      } 
+        // 溅水更新 + 批量绘制
+        splashPool.update();
+        splashPool.draw(ctx);
+      }
       
       // SNOWY
       else if (weather === 'snowy') {
@@ -975,22 +961,19 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
 
       // FOGGY
       else if (weather === 'foggy') {
-          const { fogDensity = 0.5 } = configRef.current;
+          const { fogDensity = 0.5, wind: windVal = 0 } = configRef.current;
           
           // 绘制全屏底雾 - 渐变背景
           if (fogDensity > 0.05) {
               const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
-              // 上淡下浓
               bgGrad.addColorStop(0, `rgba(180, 195, 210, ${fogDensity * 0.3})`);
               bgGrad.addColorStop(1, `rgba(180, 195, 210, ${fogDensity * 0.7})`);
               ctx.fillStyle = bgGrad;
-              ctx.fillRect(0,0,width,height);
+              ctx.fillRect(0, 0, width, height);
           }
           
-          fogs.forEach(f => {
-               f.update(width, height, now); 
-               f.draw(ctx, fogDensity);
-          });
+          updateFogs(fogs, width, height, now, windVal);
+          drawFogs(ctx, fogs, fogDensity);
       }
 
       requestRef.current = requestAnimationFrame(animate);

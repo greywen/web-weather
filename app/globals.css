@@ -44,12 +44,15 @@ body {
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
+  will-change: transform, opacity;
+  contain: strict;
 }
 
 .fog-base {
   background-image: url('/images/smoke_1.jpg');
   opacity: calc(0.22 + (var(--fog-density) * 0.35));
-  filter: saturate(0.7) blur(0.5px);
+  filter: saturate(0.7);
+  transform: translate3d(0, 0, 0);
 }
 
 .fog-smoke {
@@ -57,6 +60,7 @@ body {
   opacity: calc(0.2 + (var(--fog-density) * 0.5));
   animation: fog-drift 60s infinite alternate;
   mix-blend-mode: screen;
+  transform: translate3d(0, 0, 0);
 }
 
 .fog-smoke--slow {
@@ -72,6 +76,7 @@ body {
   animation: fog-front 35s infinite alternate;
   transform: scale(1.08) translate3d(0, 0, 0);
   mix-blend-mode: screen;
+  will-change: transform;
 }
 
 .fog-depth {
@@ -85,16 +90,17 @@ body {
     rgba(235, 240, 245, 0) 75%
   );
   opacity: calc(0.15 + (var(--fog-density) * 0.6));
-  filter: blur(4px);
+  transform: translate3d(0, 0, 0);
 }
 
 .fog-haze {
   position: absolute;
   inset: 0;
-  background: rgba(210, 220, 230, 0.08);
+  /* backdrop-filter: blur() removed — was causing full-screen recomposite every frame */
+  /* Replaced with static semi-transparent overlay for same visual at zero cost */
+  background: rgba(210, 220, 230, calc(0.12 + (var(--fog-density) * 0.18)));
   opacity: calc(0.18 + (var(--fog-density) * 0.45));
-  backdrop-filter: blur(calc(4px + (var(--fog-density) * 8px))) saturate(0.8);
-  -webkit-backdrop-filter: blur(calc(4px + (var(--fog-density) * 8px))) saturate(0.8);
+  transform: translate3d(0, 0, 0);
 }
 
 .fog-vignette {
