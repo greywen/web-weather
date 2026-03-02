@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Github } from 'lucide-react';
 import { useWeather } from './WeatherProvider';
 import { WeatherType } from './weather-types';
 
@@ -44,6 +45,15 @@ export default function WeatherSettings() {
                     <h2 className="text-base md:text-lg font-bold text-white tracking-tight flex items-center gap-2">
                         天气控制台
                     </h2>
+                    <a
+                        href="https://github.com/greywen/web-weather"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 text-white hover:bg-white/20 hover:scale-110 transition-all border border-white/10"
+                        title="GitHub"
+                    >
+                        <Github size={20} />
+                    </a>
                 </div>
 
             <div className="space-y-6">
