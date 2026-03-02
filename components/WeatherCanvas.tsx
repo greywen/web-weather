@@ -170,18 +170,27 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
         // 按透明度分 3 档批量绘制，大幅减少 draw call
         const windOffset = windVal * 2;
         const bins: [number, number][] = [[0, 0.2], [0.2, 0.35], [0.35, 0.6]];
-        ctx.lineWidth = 1.5;
+        // 锥形雨滴：上窄下宽，模拟真实水滴下落形态
+        const topHalfWidth = 0.3;   // 雨滴顶部半宽（尖细）
+        const bottomHalfWidth = 1.2; // 雨滴底部半宽（稍宽）
         for (const [lo, hi] of bins) {
           const midOpacity = ((lo + hi) / 2).toFixed(2);
-          ctx.strokeStyle = `rgba(180, 200, 235, ${midOpacity})`;
+          ctx.fillStyle = `rgba(180, 200, 235, ${midOpacity})`;
           ctx.beginPath();
           for (let i = 0; i < this.count; i++) {
             if (this.opacity[i] >= lo && this.opacity[i] < hi) {
-              ctx.moveTo(this.x[i], this.y[i]);
-              ctx.lineTo(this.x[i] + windOffset, this.y[i] + this.length[i]);
+              const tx = this.x[i];          // 顶部 x
+              const ty = this.y[i];           // 顶部 y
+              const bx = tx + windOffset;     // 底部 x（受风偏移）
+              const by = ty + this.length[i]; // 底部 y
+              // 绘制梯形：上窄下宽
+              ctx.moveTo(tx - topHalfWidth, ty);
+              ctx.lineTo(tx + topHalfWidth, ty);
+              ctx.lineTo(bx + bottomHalfWidth, by);
+              ctx.lineTo(bx - bottomHalfWidth, by);
             }
           }
-          ctx.stroke();
+          ctx.fill();
         }
       },
       clear() {
