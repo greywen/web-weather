@@ -1,0 +1,13 @@
+services:
+  web-weather:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: web-weather
+    ports:
+      - "6000:3000"
+    environment:
+      - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
+      - PORT=3000
+    restart: unless-stopped

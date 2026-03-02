@@ -41,4 +41,5 @@ yarn-error.log*
 next-env.d.ts
 
 # others
-/ARTICLE.zh.md
+ARTICLE.zh.md
+article.md
