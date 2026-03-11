@@ -18,13 +18,11 @@ export default function FogOverlay({ forcedWeather, opacity = 1 }: { forcedWeath
       style={{ '--fog-density': density, opacity } as CSSProperties}
       aria-hidden="true"
     >
+      <div className="fog-tint" />
+      <div className="fog-depth" />
       <div className="fog-layer fog-base" />
       <div className="fog-layer fog-smoke" />
       <div className="fog-layer fog-smoke fog-smoke--slow" />
-      <div className="fog-layer fog-front" />
-      <div className="fog-depth" />
-      <div className="fog-haze" />
-      <div className="fog-vignette" />
     </div>
   );
 }
