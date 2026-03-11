@@ -117,6 +117,8 @@ body {
   pointer-events: none;
   overflow: hidden;
   --cloud-opacity: 0.5;
+  contain: layout style paint;
+  isolation: isolate;
 }
 
 .clouds {
@@ -128,8 +130,6 @@ body {
   left: 0;
   right: 0;
   height: 100%;
-  filter: blur(2px) saturate(0.9);
-  mix-blend-mode: soft-light;
 }
 
 .clouds-1,
@@ -141,24 +141,24 @@ body {
   right: 0;
   left: 0;
   height: 500px;
+  will-change: background-position;
+  contain: layout style;
+  transform: translate3d(0, 0, 0);
 }
 
 .clouds-1 {
   background-image: url('/images/clouds_2.png');
-  animation: clouds-loop-1 var(--cloud-duration-1, 20s) infinite linear;
-  opacity: calc(0.06 + (var(--cloud-opacity) * 0.25));
+  opacity: calc(0.04 + (var(--cloud-opacity) * 0.18));
 }
 
 .clouds-2 {
   background-image: url('/images/clouds_1.png');
-  animation: clouds-loop-2 var(--cloud-duration-2, 15s) infinite linear;
-  opacity: calc(0.08 + (var(--cloud-opacity) * 0.28));
+  opacity: calc(0.05 + (var(--cloud-opacity) * 0.2));
 }
 
 .clouds-3 {
   background-image: url('/images/clouds_3.png');
-  animation: clouds-loop-3 var(--cloud-duration-3, 17s) infinite linear;
-  opacity: calc(0.06 + (var(--cloud-opacity) * 0.22));
+  opacity: calc(0.04 + (var(--cloud-opacity) * 0.15));
 }
 
 @keyframes fog-drift {

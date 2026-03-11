@@ -1,9 +1,15 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useWeather } from './WeatherProvider';
 import { WeatherType } from './weather-types';
+
+const LAYERS: Array<{ distance: number; duration: number }> = [
+  { distance: 1000, duration: 20000 },
+  { distance: 1000, duration: 15000 },
+  { distance: 1579, duration: 17000 },
+];
 
 export default function CloudOverlay({ forcedWeather, opacity = 1 }: { forcedWeather?: WeatherType; opacity?: number }) {
   const { weather, config } = useWeather();
@@ -13,67 +19,47 @@ export default function CloudOverlay({ forcedWeather, opacity = 1 }: { forcedWea
   const cloudCover = config.cloudCover ?? 0.1;
   const speed = Math.max(0.2, config.speed ?? 1);
 
-  const layer1Ref = useRef<HTMLDivElement | null>(null);
-  const layer2Ref = useRef<HTMLDivElement | null>(null);
-  const layer3Ref = useRef<HTMLDivElement | null>(null);
   const animationsRef = useRef<Animation[]>([]);
+  const speedRef = useRef(speed);
+  speedRef.current = speed;
 
-  useEffect(() => {
-    if (!isCloudy) {
-      animationsRef.current.forEach((a) => a.cancel());
-      animationsRef.current = [];
-      return;
-    }
+  const startAnimations = useCallback((container: HTMLDivElement | null) => {
+    // Cleanup previous
+    animationsRef.current.forEach((a) => a.cancel());
+    animationsRef.current = [];
 
-    if (animationsRef.current.length > 0) return;
+    if (!container) return;
 
-    const layers: Array<[HTMLDivElement | null, number]> = [
-      [layer1Ref.current, 1000],
-      [layer2Ref.current, 1000],
-      [layer3Ref.current, 1579],
-    ];
-
-    const baseDurations = [20000, 15000, 17000];
-
-    layers.forEach(([el, distance], index) => {
-      if (!el || typeof el.animate !== 'function') return;
-
-      // Disable CSS animation to avoid restart/jitter
-      el.style.animation = 'none';
-
+    const children = container.children;
+    const anims: Animation[] = [];
+    for (let i = 0; i < children.length && i < LAYERS.length; i++) {
+      const el = children[i] as HTMLElement;
+      const { distance, duration } = LAYERS[i];
       const anim = el.animate(
         [
           { backgroundPosition: '0 0' },
           { backgroundPosition: `-${distance}px 0` },
         ],
-        {
-          duration: baseDurations[index],
-          iterations: Infinity,
-          easing: 'linear',
-        }
+        { duration, iterations: Infinity, easing: 'linear' },
       );
+      anim.playbackRate = speedRef.current;
+      anims.push(anim);
+    }
+    animationsRef.current = anims;
+  }, []);
 
-      animationsRef.current.push(anim);
-    });
-
-    return () => {
-      animationsRef.current.forEach((a) => a.cancel());
-      animationsRef.current = [];
-    };
-  }, [isCloudy]);
-
+  // Smoothly adjust playbackRate — no animation restart
   useEffect(() => {
-    if (!isCloudy) return;
-
     animationsRef.current.forEach((anim) => {
       anim.playbackRate = speed;
     });
-  }, [isCloudy, speed]);
+  }, [speed]);
 
   if (!isCloudy || opacity <= 0 || cloudCover <= 0) return null;
 
   return (
     <div
+      ref={startAnimations}
       className="clouds-overlay"
       style={{
         '--cloud-opacity': cloudCover,
@@ -81,9 +67,9 @@ export default function CloudOverlay({ forcedWeather, opacity = 1 }: { forcedWea
       } as CSSProperties}
       aria-hidden="true"
     >
-      <div ref={layer1Ref} className="clouds clouds-1" />
-      <div ref={layer2Ref} className="clouds clouds-2" />
-      <div ref={layer3Ref} className="clouds clouds-3" />
+      <div className="clouds clouds-1" />
+      <div className="clouds clouds-2" />
+      <div className="clouds clouds-3" />
     </div>
   );
 }
