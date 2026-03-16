@@ -217,6 +217,12 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
       }
       setWeatherState(w);
 
+      // Reset weather-specific config to defaults, preserve global params (time)
+      setConfigState(prev => ({
+          ...DEFAULT_CONFIG,
+          time: prev.time,
+      }));
+
       const from = isTransitioning
           ? (transitionProgress < 0.5 ? transitionFrom : transitionTo)
           : currentWeather;
