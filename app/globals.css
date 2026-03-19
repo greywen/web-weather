@@ -28,25 +28,25 @@ body {
 .fog-overlay {
   position: fixed;
   inset: 0;
-  width: 100vw;
+  width: 100%;
   height: 100vh;
+  height: 100dvh;
   z-index: 40;
   pointer-events: none;
   overflow: hidden;
   --fog-density: 0.5;
+  --fog-overscan: 140px;
   contain: layout style paint;
 }
 
 .fog-layer {
   position: absolute;
-  inset: -3%;
-  width: 106%;
-  height: 106%;
+  inset: calc(-1 * var(--fog-overscan));
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
   will-change: transform;
-  contain: strict;
+  contain: paint;
 }
 
 /* Subtle texture — barely visible, just adds organic variation */
@@ -78,7 +78,7 @@ body {
     radial-gradient(ellipse 120% 80% at 50% 60%, rgba(220, 225, 230, 0.95) 0%, rgba(200, 208, 216, 0.7) 50%, rgba(180, 190, 200, 0.5) 100%);
   opacity: calc(0.55 + (var(--fog-density) * 0.4));
   transform: translate3d(0, 0, 0);
-  contain: strict;
+  contain: paint;
 }
 
 /* Depth gradient — bottom heavier, simulates ground fog density */
@@ -94,7 +94,7 @@ body {
   );
   opacity: calc(0.3 + (var(--fog-density) * 0.5));
   transform: translate3d(0, 0, 0);
-  contain: strict;
+  contain: paint;
 }
 
 .clouds-overlay {
@@ -175,6 +175,50 @@ body {
   }
   100% {
     transform: translate3d(-10px, -10px, 0) rotate(0.01deg);
+  }
+}
+
+@media (max-width: 767px) {
+  .fog-overlay {
+    --fog-overscan: 96px;
+  }
+
+  .fog-smoke {
+    animation-name: fog-drift-mobile;
+  }
+
+  .fog-smoke--slow {
+    animation-name: fog-drift-slow-mobile;
+  }
+}
+
+@keyframes fog-drift-mobile {
+  25% {
+    transform: translate3d(36px, 0, 0) rotate(0.01deg);
+  }
+  50% {
+    transform: translate3d(24px, -10px, 0) rotate(0.01deg);
+  }
+  75% {
+    transform: translate3d(16px, 12px, 0) rotate(0.01deg);
+  }
+  100% {
+    transform: translate3d(10px, -8px, 0) rotate(0.01deg);
+  }
+}
+
+@keyframes fog-drift-slow-mobile {
+  25% {
+    transform: translate3d(-28px, 8px, 0) rotate(0.01deg);
+  }
+  50% {
+    transform: translate3d(-16px, -10px, 0) rotate(0.01deg);
+  }
+  75% {
+    transform: translate3d(-10px, 12px, 0) rotate(0.01deg);
+  }
+  100% {
+    transform: translate3d(-6px, -8px, 0) rotate(0.01deg);
   }
 }
 
