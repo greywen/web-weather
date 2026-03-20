@@ -1,9 +1,20 @@
 {
   "name": "web-weather",
   "title": "Web Weather",
-  "description": "Browser-based weather visualization",
+  "description": "Interactive browser-based weather simulation with Canvas 2D particles, procedural audio, and real-time geolocation weather — rain, snow, fog, clouds, sunshine, thunderstorms",
   "version": "0.1.0",
   "private": true,
+  "keywords": [
+    "weather",
+    "web-weather",
+    "weather-simulation",
+    "weather-visualization",
+    "weather-animation",
+    "天气",
+    "天气模拟",
+    "天气可视化",
+    "天气动画"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",

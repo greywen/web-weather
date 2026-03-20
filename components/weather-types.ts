@@ -38,8 +38,8 @@ export const DEFAULT_CONFIG: WeatherConfig = {
 export interface WeatherData {
   type: WeatherType;
   temperature: number;
-  isDay: boolean; // 是否是白天
-  sunProgress: number; // 0 = 日出, 0.5 = 正午, 1 = 日落 (用于计算太阳位置)
+  isDay: boolean; // Whether it is daytime
+  sunProgress: number; // 0 = sunrise, 0.5 = noon, 1 = sunset (used for sun position calculation)
   locationName: string;
 }
 

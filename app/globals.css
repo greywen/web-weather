@@ -25,6 +25,29 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Slim scrollbar for settings panel */
+.settings-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.settings-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.settings-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.settings-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+
+.settings-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
 .fog-overlay {
   position: fixed;
   inset: 0;

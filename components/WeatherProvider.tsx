@@ -21,6 +21,8 @@ interface WeatherContextType {
   setSoundEnabled: (v: boolean) => void;
   soundVolume: number;
   setSoundVolume: (v: number) => void;
+  immersive: boolean;
+  setImmersive: (v: boolean) => void;
 }
 
 const WeatherContext = createContext<WeatherContextType | undefined>(undefined);
@@ -56,6 +58,29 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(false);
   const [soundVolume, setSoundVolume] = useState<number>(0.6);
+  const [immersive, setImmersiveState] = useState<boolean>(false);
+
+  const setImmersive = useCallback((v: boolean) => {
+    setImmersiveState(v);
+    if (v) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } else {
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.().catch(() => {});
+      }
+    }
+  }, []);
+
+  // Sync immersive state when user exits fullscreen via Escape
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        setImmersiveState(false);
+      }
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
 
   const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 
@@ -298,6 +323,8 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
             setSoundEnabled,
             soundVolume,
             setSoundVolume,
+            immersive,
+            setImmersive,
         }}
     >
             <div className="min-h-screen relative overflow-hidden" onClick={handleUserInteraction}>
@@ -345,8 +372,8 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
             {children}
 
              {/* Live Data Display (Optional Debug) */}
-             {weatherData && isAuto && (
-                 <div className="absolute top-4 right-4 text-right text-xs text-white/60 font-mono">
+             {weatherData && isAuto && !immersive && (
+                 <div className="absolute top-6 right-2.5 text-right text-xs text-white/60 font-mono">
                      <p>{weatherData.temperature}°C</p>
                      <p>Sun: {(weatherData.sunProgress * 100).toFixed(0)}%</p>
                  </div>
