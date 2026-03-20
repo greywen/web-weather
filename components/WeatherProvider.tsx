@@ -5,7 +5,6 @@ import { WeatherType, WeatherData, WeatherConfig, DEFAULT_CONFIG, WeatherTransit
 import WeatherCanvas from './WeatherCanvas';
 import FogOverlay from './FogOverlay';
 import CloudOverlay from './CloudOverlay';
-import BottomNav from './BottomNav';
 import { useWeatherAudio } from './useWeatherAudio';
 
 interface WeatherContextType {
@@ -353,9 +352,6 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
                  </div>
              )}
         </main>
-        
-                {/* Dock Navigation */}
-                <BottomNav />
       </div>
     </WeatherContext.Provider>
   );

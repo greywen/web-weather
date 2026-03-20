@@ -55,15 +55,8 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
     let width = window.innerWidth;
     let height = window.innerHeight;
     
-    // 导航栏参数计算
-    let navWidth = Math.min(width * 0.9, 448); // max-w-md is 28rem = 448px
-    // 底部 24px (bottom-6) + 高度 80px (h-20)
-    // 碰撞面在导航栏顶部
-    const navBottomOffset = 24; 
-    const navContentHeight = 80;
-    let groundLevel = height - navBottomOffset - navContentHeight;
-    let navLeftX = (width - navWidth) / 2;
-    let navRightX = navLeftX + navWidth;
+    // 地面碰撞线：页面底部（留几像素让溅水/积雪可见）
+    let groundLevel = height - 4;
 
     canvas.width = width;
     canvas.height = height;
@@ -71,7 +64,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
     // --- 粒子类定义 ---
 
     // 1. 溅水粒子 (Splash) — 使用对象池避免 GC 压力
-    const SPLASH_POOL_SIZE = 512;
+    const SPLASH_POOL_SIZE = 256;
     const splashPool = {
       x:       new Float32Array(SPLASH_POOL_SIZE),
       y:       new Float32Array(SPLASH_POOL_SIZE),
@@ -96,7 +89,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
           this.vy[i] += gravity;
           this.x[i] += this.vx[i];
           this.y[i] += this.vy[i];
-          this.life[i] -= 0.03;
+          this.life[i] -= 0.05;
           if (this.life[i] <= 0) {
             // swap-and-pop: 用末尾元素覆盖当前，O(1) 移除
             const last = this.count - 1;
@@ -116,13 +109,11 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
       },
       draw(ctx: CanvasRenderingContext2D) {
         if (this.count === 0) return;
-        // 按 opacity 分组批量绘制，减少 fillStyle 切换
-        // 简化：用统一半透明色一次性绘制全部（视觉差异极小）
         ctx.fillStyle = 'rgba(200, 220, 255, 0.6)';
+        // 合并所有 rect 到一条路径，单次 fill
         ctx.beginPath();
         for (let i = 0; i < this.count; i++) {
-          ctx.moveTo(this.x[i] + 1.5, this.y[i]);
-          ctx.arc(this.x[i], this.y[i], 1.5, 0, Math.PI * 2);
+          ctx.rect(this.x[i] - 1, this.y[i] - 1, 2, 2);
         }
         ctx.fill();
       },
@@ -131,8 +122,15 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
       }
     };
 
-    // 2. 雨滴粒子 (Rain) — SoA 布局 + 批量绘制
+    // 2. 雨滴粒子 (Rain) — SoA 布局 + 按 bin 分组绘制
     const MAX_RAIN = 600;
+    // 预分配 bin 索引：避免每帧 3 次全量扫描
+    const BIN_COUNT = 3;
+    const binThresholds: [number, number][] = [[0, 0.2], [0.2, 0.35], [0.35, 0.6]];
+    // 预计算 fillStyle 字符串，避免每帧重复字符串拼接
+    const binFillStyles = binThresholds.map(([lo, hi]) => `rgba(180, 200, 235, ${((lo + hi) / 2).toFixed(2)})`);
+    const binIndices: Int16Array[] = Array.from({length: BIN_COUNT}, () => new Int16Array(MAX_RAIN));
+    const binSizes = new Int32Array(BIN_COUNT);
     const rainData = {
       x:         new Float32Array(MAX_RAIN),
       y:         new Float32Array(MAX_RAIN),
@@ -146,11 +144,40 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
         this.baseSpeed[i] = Math.random() * 15 + 15;
         this.length[i] = Math.random() * 20 + 20;
         this.opacity[i] = Math.random() * 0.4 + 0.1;
+        // 分配到 bin
+        this._assignBin(i);
+      },
+      _assignBin(i: number) {
+        const o = this.opacity[i];
+        for (let b = 0; b < BIN_COUNT; b++) {
+          if (o >= binThresholds[b][0] && o < binThresholds[b][1]) {
+            binIndices[b][binSizes[b]++] = i;
+            return;
+          }
+        }
+        // fallback to last bin
+        binIndices[BIN_COUNT - 1][binSizes[BIN_COUNT - 1]++] = i;
       },
       setCount(n: number) {
         const target = Math.min(n, MAX_RAIN);
         while (this.count < target) { this.init(this.count); this.count++; }
-        if (this.count > target) this.count = target;
+        if (this.count > target) {
+          // 重建 bin 索引
+          this.count = target;
+          this._rebuildBins();
+        }
+      },
+      _rebuildBins() {
+        for (let b = 0; b < BIN_COUNT; b++) binSizes[b] = 0;
+        for (let i = 0; i < this.count; i++) {
+          const o = this.opacity[i];
+          for (let b = 0; b < BIN_COUNT; b++) {
+            if (o >= binThresholds[b][0] && o < binThresholds[b][1]) {
+              binIndices[b][binSizes[b]++] = i;
+              break;
+            }
+          }
+        }
       },
       updateAll(windVal: number, speedMult: number) {
         for (let i = 0; i < this.count; i++) {
@@ -158,14 +185,14 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
           this.y[i] += spd;
           this.x[i] += windVal;
 
-          // 碰撞检测
-          const hitGround = this.y[i] > groundLevel && this.y[i] < groundLevel + spd;
-          const hitNavbar = this.x[i] > navLeftX + 10 && this.x[i] < navRightX - 10;
-
-          if (hitGround && hitNavbar) {
-            const splashCount = Math.floor(Math.random() * 3) + 2;
-            for (let s = 0; s < splashCount; s++) {
-              splashPool.spawn(this.x[i], groundLevel);
+          // 碰撞检测：到达页面底部时产生溅水
+          if (this.y[i] > groundLevel && this.y[i] < groundLevel + spd) {
+            // 高速时降低溅水概率，避免 splash pool 饱和
+            if (splashPool.count < SPLASH_POOL_SIZE - 8) {
+              const splashCount = Math.floor(Math.random() * 2) + 1;
+              for (let s = 0; s < splashCount; s++) {
+                splashPool.spawn(this.x[i], groundLevel);
+              }
             }
             this.y[i] = -this.length[i];
             this.x[i] = Math.random() * width;
@@ -181,34 +208,33 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
       },
       drawAll(ctx: CanvasRenderingContext2D, windVal: number) {
         if (this.count === 0) return;
-        // 按透明度分 3 档批量绘制，大幅减少 draw call
         const windOffset = windVal * 2;
-        const bins: [number, number][] = [[0, 0.2], [0.2, 0.35], [0.35, 0.6]];
-        // 锥形雨滴：上窄下宽，模拟真实水滴下落形态
-        const topHalfWidth = 0.3;   // 雨滴顶部半宽（尖细）
-        const bottomHalfWidth = 1.2; // 雨滴底部半宽（稍宽）
-        for (const [lo, hi] of bins) {
-          const midOpacity = ((lo + hi) / 2).toFixed(2);
-          ctx.fillStyle = `rgba(180, 200, 235, ${midOpacity})`;
+        const topHalfWidth = 0.3;
+        const bottomHalfWidth = 1.2;
+        // 按预分组的 bin 直接绘制，无需每帧 3x 全量扫描
+        for (let b = 0; b < BIN_COUNT; b++) {
+          const size = binSizes[b];
+          if (size === 0) continue;
+          ctx.fillStyle = binFillStyles[b];
           ctx.beginPath();
-          for (let i = 0; i < this.count; i++) {
-            if (this.opacity[i] >= lo && this.opacity[i] < hi) {
-              const tx = this.x[i];          // 顶部 x
-              const ty = this.y[i];           // 顶部 y
-              const bx = tx + windOffset;     // 底部 x（受风偏移）
-              const by = ty + this.length[i]; // 底部 y
-              // 绘制梯形：上窄下宽
-              ctx.moveTo(tx - topHalfWidth, ty);
-              ctx.lineTo(tx + topHalfWidth, ty);
-              ctx.lineTo(bx + bottomHalfWidth, by);
-              ctx.lineTo(bx - bottomHalfWidth, by);
-            }
+          const idx = binIndices[b];
+          for (let j = 0; j < size; j++) {
+            const i = idx[j];
+            const tx = this.x[i];
+            const ty = this.y[i];
+            const bx = tx + windOffset;
+            const by = ty + this.length[i];
+            ctx.moveTo(tx - topHalfWidth, ty);
+            ctx.lineTo(tx + topHalfWidth, ty);
+            ctx.lineTo(bx + bottomHalfWidth, by);
+            ctx.lineTo(bx - bottomHalfWidth, by);
           }
           ctx.fill();
         }
       },
       clear() {
         this.count = 0;
+        for (let b = 0; b < BIN_COUNT; b++) binSizes[b] = 0;
       }
     };
 
@@ -244,12 +270,11 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
         this.x += currentWind + Math.sin(this.angle) * 0.5;
         this.angle += 0.05;
 
-        // 碰撞检测：积雪逻辑
+        // 碰撞检测：到达页面底部时积雪
         const hitGround = this.y > groundLevel && this.y < groundLevel + 5;
-        const hitNavbar = this.x > navLeftX + 5 && this.x < navRightX - 5;
 
-        // 如果击中导航栏且传入了积雪管理器
-        if (snowPile && hitGround && hitNavbar) {
+        // 如果击中地面且传入了积雪管理器
+        if (snowPile && hitGround) {
              // 注册积雪点
              snowPile.add(this.x);
              // 立即重置回顶部
@@ -422,68 +447,38 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
             ctx.globalCompositeOperation = 'source-over';
         }
 
-        // 绘制底部导航栏光效 (专门增强)
+        // 绘制底部地面光效
         drawBottomGlow(
           ctx: CanvasRenderingContext2D,
           sunX: number,
           screenW: number,
-          navLeft: number,
-          navRight: number,
-          navTop: number,
-          navHeight: number,
+          screenH: number,
           intensity: number
         ) {
-          // 仅在导航栏上沿绘制细条反光
-          const navWidth = navRight - navLeft;
-          if (navWidth <= 0 || navHeight <= 0) return;
-
-          const edgeHeight = Math.max(6, navHeight * 0.18);
-          const radius = Math.min(16, navHeight * 0.5, navWidth * 0.5);
-
-          const roundRectPath = (x: number, y: number, w: number, h: number, r: number) => {
-            const rr = Math.min(r, w / 2, h / 2);
-            ctx.beginPath();
-            ctx.moveTo(x + rr, y);
-            ctx.lineTo(x + w - rr, y);
-            ctx.arcTo(x + w, y, x + w, y + rr, rr);
-            ctx.lineTo(x + w, y + h - rr);
-            ctx.arcTo(x + w, y + h, x + w - rr, y + h, rr);
-            ctx.lineTo(x + rr, y + h);
-            ctx.arcTo(x, y + h, x, y + h - rr, rr);
-            ctx.lineTo(x, y + rr);
-            ctx.arcTo(x, y, x + rr, y, rr);
-            ctx.closePath();
-          };
+          const glowHeight = 30;
+          const glowY = screenH - glowHeight;
 
           ctx.save();
           ctx.globalCompositeOperation = 'screen';
-          // 先裁剪为导航栏圆角，再裁剪到顶部细条区域，避免圆角被直角覆盖
-          roundRectPath(navLeft, navTop, navWidth, navHeight, radius);
-          ctx.clip();
-          ctx.beginPath();
-          ctx.rect(navLeft, navTop, navWidth, edgeHeight);
-          ctx.clip();
 
-          // 光斑位置：根据太阳水平位置映射到导航栏宽度
+          // 光斑位置：根据太阳水平位置映射到屏幕宽度
           const sunRatio = Math.max(0, Math.min(1, sunX / screenW));
-          const glowX = navLeft + sunRatio * navWidth;
-          const glowY = navTop + edgeHeight * 0.6;
+          const glowX = sunRatio * screenW;
 
-          // 更窄的椭圆形高光，限制在上边缘
-            const baseRadius = Math.max(30, navWidth * 0.12);
-            const glowRadius = baseRadius * (0.6 + intensity * 0.4);
+          const baseRadius = Math.max(60, screenW * 0.15);
+          const glowRadius = baseRadius * (0.6 + intensity * 0.4);
 
           ctx.translate(glowX, glowY);
-            ctx.scale(1.8, 0.35);
+          ctx.scale(2.5, 0.3);
 
-            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, glowRadius);
-          gradient.addColorStop(0, `rgba(255, 255, 255, ${0.5 * intensity})`);
-          gradient.addColorStop(0.35, `rgba(255, 250, 230, ${0.18 * intensity})`);
+          const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, glowRadius);
+          gradient.addColorStop(0, `rgba(255, 255, 255, ${0.35 * intensity})`);
+          gradient.addColorStop(0.35, `rgba(255, 250, 230, ${0.12 * intensity})`);
           gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
 
           ctx.fillStyle = gradient;
           ctx.beginPath();
-            ctx.arc(0, 0, glowRadius, 0, Math.PI * 2);
+          ctx.arc(0, 0, glowRadius, 0, Math.PI * 2);
           ctx.fill();
 
           ctx.restore();
@@ -584,15 +579,12 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
             let drawAlpha = this.alpha;
             if (this.life < 10) drawAlpha = this.life / 10;
 
-            ctx.shadowBlur = 25;
-            ctx.shadowColor = "rgba(180, 210, 255, 0.8)";
-            ctx.strokeStyle = `rgba(230, 245, 255, ${drawAlpha})`;
-            
+            // 双线绘制代替 shadowBlur（shadowBlur 是 GPU 高斯模糊，极其昂贵）
+            // 第 1 遍：粗线半透明 → 模拟辉光
+            ctx.strokeStyle = `rgba(180, 210, 255, ${drawAlpha * 0.3})`;
             for(let i=0; i<this.segments.length; i++) {
                 const seg = this.segments[i];
-                // 主干粗，分支细
-                ctx.lineWidth = i === 0 ? 3.0 : 1.2; 
-                
+                ctx.lineWidth = i === 0 ? 8 : 4;
                 ctx.beginPath();
                 for(let j=0; j<seg.length; j++) {
                     const p = seg[j];
@@ -601,7 +593,19 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
                 }
                 ctx.stroke();
             }
-            ctx.shadowBlur = 0;
+            // 第 2 遍：细线高亮 → 闪电主体
+            ctx.strokeStyle = `rgba(230, 245, 255, ${drawAlpha})`;
+            for(let i=0; i<this.segments.length; i++) {
+                const seg = this.segments[i];
+                ctx.lineWidth = i === 0 ? 2.5 : 1.0;
+                ctx.beginPath();
+                for(let j=0; j<seg.length; j++) {
+                    const p = seg[j];
+                    if (j===0) ctx.moveTo(p.x, p.y);
+                    else ctx.lineTo(p.x, p.y);
+                }
+                ctx.stroke();
+            }
         }
     }
 
@@ -714,9 +718,8 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
         }
     }
 
-    // 7. 雾 (Fog) - 使用离屏 Canvas 缓存渐变纹理，避免每帧 createRadialGradient
-    // 预渲染一个白色径向渐变圆到离屏 canvas，绘制时只需 drawImage + globalAlpha
-    const FOG_TEX_SIZE = 256;
+    // 7. 雾 (Fog) - 使用离屏 Canvas 缓存渐变纹理
+    const FOG_TEX_SIZE = 128;
     const fogTexCanvas = document.createElement('canvas');
     fogTexCanvas.width = FOG_TEX_SIZE;
     fogTexCanvas.height = FOG_TEX_SIZE;
@@ -747,7 +750,8 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
             this.x = Math.random() * (canvasW + 400) - 200;
             this.y = Math.random() * (canvasH + 200) - 100;
             const zFactor = Math.random();
-            this.baseRadius = minDim * (0.3 + zFactor * 0.9);
+            // 限制最大半径为 400px，避免巨大的 drawImage 贴图
+            this.baseRadius = Math.min(minDim * (0.2 + zFactor * 0.5), 400);
             this.radius = this.baseRadius;
             const driftDir = Math.random() > 0.5 ? 1 : -1;
             this.speed = (0.2 + zFactor * 0.5) * driftDir;
@@ -779,6 +783,8 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
         const finalOpacity = f.opacity * (0.6 + density * 0.8);
         if (finalOpacity <= 0.01) continue;
         const diam = f.radius * 2;
+        // 跳过完全在屏幕外的雾气
+        if (f.x + f.radius < 0 || f.x - f.radius > width || f.y + f.radius < 0 || f.y - f.radius > height) continue;
         c.globalAlpha = finalOpacity;
         c.drawImage(fogTexCanvas, f.x - f.radius, f.y - f.radius, diam, diam);
       }
@@ -829,7 +835,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
       } else if (weather === 'sunny') {
         sunEffect = new SunEffect();
       } else if (weather === 'foggy') {
-        const fogCount = 25;
+        const fogCount = 10;
         for(let i=0; i<fogCount; i++) {
              fogs.push(new FogPuff(width, height));
         }
@@ -840,10 +846,23 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
     
     // REMOVED drawIceVignette
 
+    // --- FPS 计数器 ---
+    let fpsFrameCount = 0;
+    let fpsLastTime = performance.now();
+    let fpsDisplay = 0;
+
     // --- 动画循环 ---
     const animate = () => {
       ctx.clearRect(0, 0, width, height);
       const now = performance.now();
+
+      // FPS 计算
+      fpsFrameCount++;
+      if (now - fpsLastTime >= 1000) {
+        fpsDisplay = fpsFrameCount;
+        fpsFrameCount = 0;
+        fpsLastTime = now;
+      }
       
       const { intensity, time = 12 } = configRef.current; // 使用最新配置
 
@@ -920,15 +939,12 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
           // 2. 绘制镜头光斑
           sunEffect.drawFlares(ctx, sunX, sunY, width, height, adjustedIntensity);
         
-          // 3. 绘制底部导航栏专属光效 (新增)
+          // 3. 绘制底部地面光效
           sunEffect.drawBottomGlow(
             ctx,
             sunX,
             width,
-            navLeftX,
-            navRightX,
-            groundLevel,
-            navContentHeight,
+            height,
             adjustedIntensity
           );
         }
@@ -1007,18 +1023,25 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
       else if (weather === 'foggy') {
           const { fogDensity = 0.5, wind: windVal = 0 } = configRef.current;
           
-          // 绘制全屏底雾 - 渐变背景
+          // 绘制全屏底雾 - 用预计算的纯色替代每帧 createLinearGradient
           if (fogDensity > 0.05) {
-              const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
-              bgGrad.addColorStop(0, `rgba(180, 195, 210, ${fogDensity * 0.3})`);
-              bgGrad.addColorStop(1, `rgba(180, 195, 210, ${fogDensity * 0.7})`);
-              ctx.fillStyle = bgGrad;
+              ctx.globalAlpha = fogDensity * 0.5;
+              ctx.fillStyle = 'rgb(180, 195, 210)';
               ctx.fillRect(0, 0, width, height);
+              ctx.globalAlpha = 1;
           }
           
           updateFogs(fogs, width, height, now, windVal);
           drawFogs(ctx, fogs, fogDensity);
       }
+
+      // 绘制 FPS
+      ctx.save();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.font = '12px monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(`${fpsDisplay} FPS`, width - 10, 20);
+      ctx.restore();
 
       requestRef.current = requestAnimationFrame(animate);
     };
@@ -1028,16 +1051,12 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
     const handleResize = () => {
       width = window.innerWidth;
       height = window.innerHeight;
-      
-      // 更新导航栏参数
-      navWidth = Math.min(width * 0.9, 448);
-      navLeftX = (width - navWidth) / 2;
-      navRightX = navLeftX + navWidth;
-      groundLevel = height - navBottomOffset - navContentHeight;
+      groundLevel = height - 4;
 
       canvas.width = width;
       canvas.height = height;
-      initParticles(); 
+      // 不再调用 initParticles()，避免所有粒子同时重建导致溅落动画同步
+      // 现有粒子会通过各自 update 循环自然回收到新边界内
     };
 
     window.addEventListener('resize', handleResize);

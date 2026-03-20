@@ -28,13 +28,13 @@ export default function WeatherSettings() {
             <button
                 type="button"
                 onClick={() => setIsOpen((open) => !open)}
-                className="fixed top-4 left-4 z-[60] rounded-full bg-slate-900/70 text-white text-xs px-3 py-2 shadow-lg border border-white/10 backdrop-blur-md md:hidden"
+                className="fixed top-4 left-4 z-[60] rounded-full bg-slate-900/85 text-white text-xs px-3 py-2 shadow-lg border border-white/10 md:hidden"
             >
                 {isOpen ? '隐藏控制台' : '显示控制台'}
             </button>
 
             <div
-                className={`fixed z-50 transition-all bg-slate-900/60 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl hover:bg-slate-900/80
+                className={`fixed z-50 transition-all bg-slate-900/85 border border-white/10 rounded-xl shadow-2xl hover:bg-slate-900/90
                     w-[90vw] max-w-sm left-1/2 -translate-x-1/2 top-16 p-4 md:p-5 md:w-80 md:left-4 md:translate-x-0 md:top-4
                     max-h-[70vh] overflow-y-auto
                     ${isOpen ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 -translate-y-2 pointer-events-none'}
