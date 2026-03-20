@@ -78,7 +78,6 @@ components/
   WeatherSettings.tsx  # Control panel UI (desktop & immersive mode)
   CloudOverlay.tsx     # Parallax cloud layers
   FogOverlay.tsx       # Fog gradient & drifting smoke
-  BottomNav.tsx        # Mobile glassmorphism nav bar
   useWeatherAudio.ts   # Procedural audio synthesis (thunder, rain, wind)
   weather-types.ts     # TypeScript type definitions
 public/

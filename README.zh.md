@@ -78,7 +78,6 @@ components/
   WeatherSettings.tsx  # 控制面板 UI（桌面端与沉浸模式）
   CloudOverlay.tsx     # 视差云层
   FogOverlay.tsx       # 雾效渐变与烟雾漂浮
-  BottomNav.tsx        # 移动端玻璃态导航栏
   useWeatherAudio.ts   # 程序化音频合成（雷声、雨声、风声）
   weather-types.ts     # TypeScript 类型定义
 public/

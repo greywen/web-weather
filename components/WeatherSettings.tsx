@@ -4,20 +4,24 @@ import { useEffect, useState } from 'react';
 import { Github, Volume2, VolumeX, Maximize, Minimize } from 'lucide-react';
 import { useWeather } from './WeatherProvider';
 import { WeatherType } from './weather-types';
+import { useI18n, Locale, TranslationKey } from './i18n';
 
-const weatherLabel: Record<WeatherType, string> = {
-    sunny: '☀️ Sunny',
-    rainy: '🌧️ Rainy',
-    snowy: '❄️ Snowy',
-    cloudy: '☁️ Cloudy',
-    foggy: '🌫️ Foggy',
-    icy: '🧊 Icy',
+const weatherEmoji: Record<WeatherType, string> = {
+    sunny: '☀️',
+    rainy: '🌧️',
+    snowy: '❄️',
+    cloudy: '☁️',
+    foggy: '🌫️',
+    icy: '🧊',
 };
 
 export default function WeatherSettings() {
     const { weather, setWeather, config, setConfig, transition, setTransitionConfig, isAuto, toggleAuto, soundEnabled, setSoundEnabled, immersive, setImmersive } = useWeather();
+    const { t, locale, setLocale } = useI18n();
     const [isOpen, setIsOpen] = useState(true);
     const [menuOpen, setMenuOpen] = useState(false);
+
+    const weatherLabel = (type: WeatherType) => `${weatherEmoji[type]} ${t(type as TranslationKey)}`;
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -42,8 +46,8 @@ export default function WeatherSettings() {
                     onClick={() => setMenuOpen(true)}
                     className="fixed top-4 left-4 z-[70] flex items-center gap-2 rounded-lg bg-slate-900/70 backdrop-blur-sm text-white text-xs px-3 py-2 border border-white/10 hover:bg-slate-900/90 transition-all cursor-pointer"
                 >
-                    <span>{weatherLabel[weather] ?? weather}</span>
-                    {isAuto ? <span className="text-green-400">Auto</span> : <span className="text-white/40">Manual</span>}
+                    <span>{weatherLabel(weather)}</span>
+                    {isAuto ? <span className="text-green-400">{t('auto')}</span> : <span className="text-white/40">{t('manual')}</span>}
                 </button>
             )}
 
@@ -54,7 +58,7 @@ export default function WeatherSettings() {
                 onClick={() => setIsOpen((open) => !open)}
                 className="fixed top-4 left-4 z-[60] rounded-full bg-slate-900/85 text-white text-xs px-3 py-2 shadow-lg border border-white/10 md:hidden"
             >
-                {isOpen ? 'Hide Panel' : 'Show Panel'}
+                {isOpen ? t('hidePanel') : t('showPanel')}
             </button>
             )}
 
@@ -70,7 +74,7 @@ export default function WeatherSettings() {
             >
                 <div className="flex justify-between items-center mb-4 md:mb-6">
                     <h2 className="text-base md:text-lg font-bold text-white tracking-tight flex items-center gap-2">
-                        Weather Control
+                        {t('weatherControl')}
                     </h2>
                     <div className="flex items-center gap-1.5">
                         {immersive && (
@@ -78,11 +82,19 @@ export default function WeatherSettings() {
                                 type="button"
                                 onClick={() => setMenuOpen(false)}
                                 className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 text-white hover:bg-white/20 hover:scale-110 transition-all border border-white/10"
-                                title="Close Panel"
+                                title={t('closePanel')}
                             >
                                 ✕
                             </button>
                         )}
+                        <button
+                            type="button"
+                            onClick={() => setLocale(locale === 'en' ? 'zh' : 'en')}
+                            className="flex items-center justify-center h-8 rounded-lg bg-white/10 text-white text-xs font-semibold px-2 hover:bg-white/20 hover:scale-110 transition-all border border-white/10"
+                            title={t('language')}
+                        >
+                            {locale === 'en' ? '中文' : 'EN'}
+                        </button>
                         <a
                             href="https://github.com/greywen/web-weather"
                             target="_blank"
@@ -100,21 +112,21 @@ export default function WeatherSettings() {
                 <div className="rounded-lg border border-white/10 bg-white/5 overflow-hidden">
                     <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/5">
                         <div className="flex flex-col">
-                            <span className="text-xs text-white/80">Weather Mode</span>
-                            <span className="text-[10px] text-white/40">Auto Location / Manual</span>
+                            <span className="text-xs text-white/80">{t('weatherMode')}</span>
+                            <span className="text-[10px] text-white/40">{t('weatherModeDesc')}</span>
                         </div>
                         <button
                             type="button"
                             onClick={toggleAuto}
                             className={`text-xs font-semibold px-2.5 py-1 rounded-full transition-all ${isAuto ? 'bg-green-500/80 text-white' : 'bg-white/10 text-white/60 border border-white/10'}`}
                         >
-                            {isAuto ? 'Auto' : 'Manual'}
+                            {isAuto ? t('auto') : t('manual')}
                         </button>
                     </div>
                     <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/5">
                         <div className="flex flex-col">
-                            <span className="text-xs text-white/80">Immersive Mode</span>
-                            <span className="text-[10px] text-white/40">Fullscreen / Hide Panel</span>
+                            <span className="text-xs text-white/80">{t('immersiveMode')}</span>
+                            <span className="text-[10px] text-white/40">{t('immersiveModeDesc')}</span>
                         </div>
                         <button
                             type="button"
@@ -124,43 +136,39 @@ export default function WeatherSettings() {
                             }}
                             className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full transition-all ${immersive ? 'bg-blue-500/80 text-white' : 'bg-white/10 text-white/60 border border-white/10 hover:bg-white/20'}`}
                         >
-                            {immersive ? 'Exit' : 'Enter'}
+                            {immersive ? t('exit') : t('enter')}
                         </button>
                     </div>
                     <div className="flex items-center justify-between px-3 py-2.5">
                         <div className="flex flex-col">
-                            <span className="text-xs text-white/80">Sound</span>
-                            <span className="text-[10px] text-white/40">Rain / Wind / Thunder</span>
+                            <span className="text-xs text-white/80">{t('sound')}</span>
+                            <span className="text-[10px] text-white/40">{t('soundDesc')}</span>
                         </div>
                         <button
                             type="button"
                             onClick={() => setSoundEnabled(!soundEnabled)}
                             className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full transition-all ${soundEnabled ? 'bg-blue-500/80 text-white shadow-lg shadow-blue-500/30' : 'bg-white/10 text-white/60 border border-white/10'}`}
                         >
-                            {soundEnabled ? 'On' : 'Off'}
+                            {soundEnabled ? t('on') : t('off')}
                         </button>
                     </div>
                 </div>
 
                 {/* Weather Type Selector */}
                 <div className="space-y-2">
-                    <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Weather Type</h3>
+                    <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{t('weatherType')}</h3>
                     <div className="grid grid-cols-3 gap-2">
-                        {(['sunny', 'rainy', 'snowy', 'cloudy', 'foggy'] as WeatherType[]).map((t) => (
+                        {(['sunny', 'rainy', 'snowy', 'cloudy', 'foggy'] as WeatherType[]).map((wt) => (
                             <button
-                                key={t}
-                                onClick={() => handleTypeChange(t)}
+                                key={wt}
+                                onClick={() => handleTypeChange(wt)}
                                 className={`py-1.5 px-2 rounded-md text-xs font-medium transition-all ${
-                                    weather === t 
+                                    weather === wt 
                                     ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30 ring-1 ring-blue-400' 
                                     : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
                                 }`}
                             >
-                                {t === 'sunny' && '☀️ Sunny'}
-                                {t === 'rainy' && '🌧️ Rainy'}
-                                {t === 'snowy' && '❄️ Snowy'}
-                                {t === 'cloudy' && '☁️ Cloudy'}
-                                {t === 'foggy' && '🌫️ Foggy'}
+                                {weatherLabel(wt)}
                             </button>
                         ))}
                     </div>
@@ -168,10 +176,10 @@ export default function WeatherSettings() {
 
                 {/* Global Time Control */}
                 <div className="space-y-4">
-                    <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Global Settings</h3>
+                    <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{t('globalSettings')}</h3>
                     <div>
                         <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                            <span className="flex items-center gap-1">Time (24h)</span>
+                            <span className="flex items-center gap-1">{t('time24h')}</span>
                             <span className="font-mono text-white/50">
                                 {Math.floor(config.time || 12).toString().padStart(2,'0')}:
                                 {Math.floor(((config.time || 12) % 1) * 60).toString().padStart(2,'0')}
@@ -194,7 +202,7 @@ export default function WeatherSettings() {
                     </div>
                     <div>
                         <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                            <span>Transition Duration</span>
+                            <span>{t('transitionDuration')}</span>
                             <span className="font-mono text-white/50">{transition.duration.toFixed(1)}s</span>
                         </div>
                         <input
@@ -211,13 +219,13 @@ export default function WeatherSettings() {
 
                 {/* 2. Sliders based on Type */}
                 <div className="space-y-4">
-                    <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Parameters</h3>
+                    <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{t('parameters')}</h3>
                     
                     {weather === 'sunny' && (
                         <div className="space-y-4">
                             <div>
                                 <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>Light Intensity</span>
+                                    <span>{t('lightIntensity')}</span>
                                     <span className="font-mono text-white/50">{config.intensity.toFixed(1)}</span>
                                 </div>
                                 <input
@@ -230,8 +238,8 @@ export default function WeatherSettings() {
                                     className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
                                 />
                                 <div className="flex justify-between text-[10px] text-white/20 mt-1">
-                                    <span>Soft</span>
-                                    <span>Intense</span>
+                                    <span>{t('soft')}</span>
+                                    <span>{t('intense')}</span>
                                 </div>
                             </div>
                         </div>
@@ -243,7 +251,7 @@ export default function WeatherSettings() {
                             {weather === 'rainy' && (
                                 <div>
                                     <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                        <span>Cloud Cover</span>
+                                        <span>{t('cloudCover')}</span>
                                         <span className="font-mono text-white/50">{((config.cloudCover !== undefined ? config.cloudCover : 0.1) * 100).toFixed(0)}%</span>
                                     </div>
                                     <input
@@ -261,7 +269,7 @@ export default function WeatherSettings() {
                             {/* Particle Count */}
                             <div>
                                 <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>{weather === 'rainy' ? 'Rainfall' : 'Snowfall'}</span>
+                                    <span>{weather === 'rainy' ? t('rainfall') : t('snowfall')}</span>
                                     <span className="font-mono text-white/50">{config.particleCount}</span>
                                 </div>
                                 <input
@@ -278,7 +286,7 @@ export default function WeatherSettings() {
                             {/* Speed */}
                             <div>
                                 <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>Fall Speed</span>
+                                    <span>{t('fallSpeed')}</span>
                                     <span className="font-mono text-white/50">{config.speed.toFixed(1)}x</span>
                                 </div>
                                 <input
@@ -296,7 +304,7 @@ export default function WeatherSettings() {
                             {(weather === 'rainy' || weather === 'snowy') && (
                                 <div>
                                     <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                        <span>Wind</span>
+                                        <span>{t('wind')}</span>
                                         <span className="font-mono text-white/50">{config.wind.toFixed(1)}</span>
                                     </div>
                                     <input
@@ -309,8 +317,8 @@ export default function WeatherSettings() {
                                         className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
                                     />
                                     <div className="flex justify-between text-[10px] text-white/20 mt-1">
-                                        <span>← Left Wind</span>
-                                        <span>Right Wind →</span>
+                                        <span>{t('leftWind')}</span>
+                                        <span>{t('rightWind')}</span>
                                     </div>
                                 </div>
                             )}
@@ -319,8 +327,8 @@ export default function WeatherSettings() {
                             {weather === 'rainy' && (
                                 <div className="flex items-center justify-between pt-2 border-t border-white/5">
                                     <div className="flex flex-col">
-                                        <span className="text-xs text-white/80">Thunder</span>
-                                        <span className="text-[10px] text-white/40">Enable lightning flash effects</span>
+                                        <span className="text-xs text-white/80">{t('thunder')}</span>
+                                        <span className="text-[10px] text-white/40">{t('thunderDesc')}</span>
                                     </div>
                                     <input
                                         type="checkbox"
@@ -335,7 +343,7 @@ export default function WeatherSettings() {
                             {weather === 'snowy' && (
                                 <div>
                                     <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                        <span>Temperature (Snow)</span>
+                                        <span>{t('temperatureSnow')}</span>
                                         <span className="font-mono text-white/50">{config.temperature !== undefined ? config.temperature : 0}°C</span>
                                     </div>
                                     <input
@@ -348,8 +356,8 @@ export default function WeatherSettings() {
                                         className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
                                     />
                                     <div className="flex justify-between text-[10px] text-white/20 mt-1">
-                                        <span>❄️ Freeze (-10°)</span>
-                                        <span>💧 Melt (10°)</span>
+                                        <span>{t('freeze')}</span>
+                                        <span>{t('melt')}</span>
                                     </div>
                                 </div>
                             )}
@@ -361,7 +369,7 @@ export default function WeatherSettings() {
                         <div className="space-y-4">
                              <div>
                                 <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>Cloud Cover</span>
+                                    <span>{t('cloudCover')}</span>
                                     <span className="font-mono text-white/50">{((config.cloudCover !== undefined ? config.cloudCover : 0.1) * 100).toFixed(0)}%</span>
                                 </div>
                                 <input
@@ -376,7 +384,7 @@ export default function WeatherSettings() {
                             </div>
                             <div>
                                 <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>Move Speed</span>
+                                    <span>{t('moveSpeed')}</span>
                                     <span className="font-mono text-white/50">{config.speed.toFixed(1)}x</span>
                                 </div>
                                 <input
@@ -397,7 +405,7 @@ export default function WeatherSettings() {
                         <div className="space-y-4">
                              <div>
                                 <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>Fog Density</span>
+                                    <span>{t('fogDensity')}</span>
                                     <span className="font-mono text-white/50">{((config.fogDensity !== undefined ? config.fogDensity : 0.5) * 100).toFixed(0)}%</span>
                                 </div>
                                 <input
@@ -413,6 +421,7 @@ export default function WeatherSettings() {
                         </div>
                     )}
                 </div>
+
             </div>
         </div>
         </>
