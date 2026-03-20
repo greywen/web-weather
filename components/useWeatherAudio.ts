@@ -5,6 +5,23 @@ import { WeatherType, WeatherConfig } from './weather-types';
 
 // ── Procedural Audio Generators ─────────────────────────────────
 
+/** Shared white noise buffer — generated once per AudioContext */
+let sharedNoiseBuffer: AudioBuffer | null = null;
+let sharedNoiseCtx: AudioContext | null = null;
+
+function getSharedNoiseBuffer(ctx: AudioContext): AudioBuffer {
+  if (sharedNoiseBuffer && sharedNoiseCtx === ctx) return sharedNoiseBuffer;
+  const bufferSize = ctx.sampleRate * 2;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  sharedNoiseBuffer = buffer;
+  sharedNoiseCtx = ctx;
+  return buffer;
+}
+
 /** Create a looping noise source with a biquad filter (rain/wind/snow ambient) */
 function createFilteredNoise(
   ctx: AudioContext,
@@ -12,16 +29,8 @@ function createFilteredNoise(
   frequency: number,
   Q: number
 ): { source: AudioBufferSourceNode; filter: BiquadFilterNode; gain: GainNode } {
-  // Generate 2 seconds of white noise buffer
-  const bufferSize = ctx.sampleRate * 2;
-  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < bufferSize; i++) {
-    data[i] = Math.random() * 2 - 1;
-  }
-
   const source = ctx.createBufferSource();
-  source.buffer = buffer;
+  source.buffer = getSharedNoiseBuffer(ctx);
   source.loop = true;
 
   const filter = ctx.createBiquadFilter();
@@ -158,16 +167,22 @@ function buildRumbleBuffer(ctx: AudioContext, duration: number): AudioBuffer {
   return buf;
 }
 
-/** Make a hard-clip waveshaper curve */
+/** Make a hard-clip waveshaper curve (cached by quantized amount) */
+const distortionCurveCache = new Map<number, Float32Array<ArrayBuffer>>();
+
 function makeDistortionCurve(amount: number): Float32Array<ArrayBuffer> {
+  // Quantize amount to 2 decimal places — avoids unbounded cache growth
+  const key = Math.round(amount * 100);
+  const cached = distortionCurveCache.get(key);
+  if (cached) return cached;
+
   const n = 44100;
   const curve = new Float32Array(n) as Float32Array<ArrayBuffer>;
   for (let i = 0; i < n; i++) {
     const x = (i * 2) / n - 1;
-    // Aggressive sigmoid clipping
-    curve[i] = Math.tanh(x * amount * 4) * (1 + 0.2 * Math.abs(x));
-    curve[i] = Math.max(-1, Math.min(1, curve[i]));
+    curve[i] = Math.max(-1, Math.min(1, Math.tanh(x * amount * 4) * (1 + 0.2 * Math.abs(x))));
   }
+  distortionCurveCache.set(key, curve);
   return curve;
 }
 
@@ -182,9 +197,42 @@ function makeDistortionCurve(amount: number): Float32Array<ArrayBuffer> {
  *  - Delay-feedback network for rolling echo
  *  - Aggressive bus compression
  */
+/** Pre-built thunder buffer cache — avoids expensive per-call synthesis */
+interface ThunderBufferCache {
+  ctx: AudioContext;
+  snap: AudioBuffer[];
+  arcTail: AudioBuffer;
+  bass: AudioBuffer[];
+  rumble: AudioBuffer[];
+}
+let thunderCache: ThunderBufferCache | null = null;
+
+function getThunderBuffers(ctx: AudioContext): ThunderBufferCache {
+  if (thunderCache && thunderCache.ctx === ctx) return thunderCache;
+  thunderCache = {
+    ctx,
+    snap: [
+      buildLightningSnapBuffer(ctx, 0.032),
+      buildLightningSnapBuffer(ctx, 0.022),
+      buildLightningSnapBuffer(ctx, 0.018),
+    ],
+    arcTail: buildThunderCrackBuffer(ctx, 0.11),
+    bass: [
+      buildSubBassBuffer(ctx, 2.5),
+      buildSubBassBuffer(ctx, 1.8),
+    ],
+    rumble: [
+      buildRumbleBuffer(ctx, 5.0),
+      buildRumbleBuffer(ctx, 7.0),
+    ],
+  };
+  return thunderCache;
+}
+
 function playThunder(ctx: AudioContext, destination: AudioNode, volume: number) {
   const now = ctx.currentTime;
-  const v = Math.min(volume * 1.8, 1.5); // louder than ambient, capped to avoid clipping the master
+  const v = Math.min(volume * 1.8, 1.5);
+  const cache = getThunderBuffers(ctx);
 
   // ── Master bus: Compressor → destination ──
   const comp = ctx.createDynamicsCompressor();
@@ -334,11 +382,13 @@ function playThunder(ctx: AudioContext, destination: AudioNode, volume: number) 
 
     src.start(startAt);
     src.stop(startAt + buffer.duration);
+    // Auto-disconnect nodes after playback to free resources
+    src.onended = () => { try { src.disconnect(); } catch { /* already disconnected */ } };
   };
 
   // ═══ 1. THE CRACK — bright return stroke + short arc tail ═══
-  const snapBuf = buildLightningSnapBuffer(ctx, 0.032);
-  const arcTailBuf = buildThunderCrackBuffer(ctx, 0.11);
+  const snapBuf = cache.snap[0];
+  const arcTailBuf = cache.arcTail;
   const mainPan = (Math.random() - 0.5) * 0.5;
   playBuf(snapBuf, now, v * 1.2, {
     hpFreq: 1800,
@@ -360,7 +410,7 @@ function playThunder(ctx: AudioContext, destination: AudioNode, volume: number) 
   });
 
   // ═══ 2. SUB-BASS BOOM — oscillator-based, you FEEL this ═══
-  const bassBuf = buildSubBassBuffer(ctx, 2.5);
+  const bassBuf = cache.bass[0];
   playBuf(bassBuf, now + 0.005, v * 1.2, {
     lpFreq: 120,
     sendEcho1: 0.3,
@@ -368,7 +418,7 @@ function playThunder(ctx: AudioContext, destination: AudioNode, volume: number) 
 
   // ═══ 3. RE-STRIKE #1 — branch return stroke ═══
   const rs1Time = now + 0.045 + Math.random() * 0.06;
-  const rs1Buf = buildLightningSnapBuffer(ctx, 0.022);
+  const rs1Buf = cache.snap[1];
   playBuf(rs1Buf, rs1Time, v * 0.68, {
     hpFreq: 1700,
     bpFreq: 4300,
@@ -383,7 +433,7 @@ function playThunder(ctx: AudioContext, destination: AudioNode, volume: number) 
 
   // ═══ 4. RE-STRIKE #2 — weak side branch spark ═══
   const rs2Time = rs1Time + 0.03 + Math.random() * 0.07;
-  const rs2Buf = buildLightningSnapBuffer(ctx, 0.018);
+  const rs2Buf = cache.snap[2];
   playBuf(rs2Buf, rs2Time, v * 0.4, {
     hpFreq: 1600,
     bpFreq: 3900,
@@ -397,21 +447,20 @@ function playThunder(ctx: AudioContext, destination: AudioNode, volume: number) 
   });
 
   // ═══ 5. ROLLING RUMBLE — long tail ═══
-  const rumbleLen = 4.0 + Math.random() * 2.0;
-  const rumbleBuf = buildRumbleBuffer(ctx, rumbleLen);
+  const rumbleBuf = cache.rumble[0];
   playBuf(rumbleBuf, now + 0.08, v * 0.55, {
     lpFreq: 250,
     sendEcho2: 0.4,
   });
 
   // ═══ 6. SECOND SUB-BASS HIT — delayed thump ═══
-  const bass2Buf = buildSubBassBuffer(ctx, 1.8);
+  const bass2Buf = cache.bass[1];
   playBuf(bass2Buf, rs1Time + 0.01, v * 0.7, {
     lpFreq: 90,
   });
 
   // ═══ 7. DISTANT RUMBLE — far-away continuation ═══
-  const distRumbleBuf = buildRumbleBuffer(ctx, rumbleLen + 2);
+  const distRumbleBuf = cache.rumble[1];
   playBuf(distRumbleBuf, now + 0.5 + Math.random() * 0.5, v * 0.25, {
     lpFreq: 150,
     pan: (Math.random() - 0.5) * 0.8,
@@ -509,6 +558,7 @@ export function useWeatherAudio(
   const lightningBuffersRef = useRef<AudioBuffer[]>([]);
   const loadingLightningRef = useRef(false);
   const initedRef = useRef(false);
+  const thunderTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
   // Fade helper
   const fadeTo = useCallback((gain: GainNode, target: number, duration = 0.5) => {
@@ -561,7 +611,7 @@ export function useWeatherAudio(
     ctxRef.current = ctx;
 
     const master = ctx.createGain();
-    master.gain.value = volume;
+    master.gain.value = 0; // Start silent; the effect will fade to correct volume
     master.connect(ctx.destination);
     masterGainRef.current = master;
 
@@ -572,7 +622,7 @@ export function useWeatherAudio(
 
     // Preload user-provided lightning samples.
     void loadLightningSamples(ctx);
-  }, [volume, loadLightningSamples]);
+  }, [loadLightningSamples]);
 
   // Resume context if suspended (browser autoplay policy)
   const resumeCtx = useCallback(() => {
@@ -598,7 +648,6 @@ export function useWeatherAudio(
     if (!enabled) return;
 
     const windAbs = Math.abs(config.wind);
-    const intensity = config.intensity ?? 1;
     const particleRatio = Math.min(config.particleCount / 300, 1); // normalize to 0-1
     const speedRatio = Math.min(config.speed / 5, 1); // normalize speed to 0-1
 
@@ -702,12 +751,6 @@ export function useWeatherAudio(
       }
     }
 
-    // ── Sunny / Foggy / Icy — silence all ────────────
-    if (weather === 'sunny' || weather === 'foggy' || weather === 'icy') {
-      if (rainRef.current) for (const l of rainRef.current.layers) fadeTo(l.gain, 0, fadeTime);
-      if (windRef.current) for (const l of windRef.current.layers) fadeTo(l.gain, 0, fadeTime);
-      if (snowRef.current) for (const l of snowRef.current.layers) fadeTo(l.gain, 0, fadeTime);
-    }
   }, [weather, config, enabled, volume, fadeTo, ensureStarted, resumeCtx]);
 
   // ── Thunder trigger ────────────────────────────────────────
@@ -718,7 +761,8 @@ export function useWeatherAudio(
 
     // Random delay simulating sound travel distance (200ms-1.2s)
     const delay = 200 + Math.random() * 1000;
-    setTimeout(() => {
+    const timerId = setTimeout(() => {
+      thunderTimersRef.current.delete(timerId);
       if (ctxRef.current && masterGainRef.current) {
         const activeCtx = ctxRef.current;
         const activeMaster = masterGainRef.current;
@@ -740,19 +784,33 @@ export function useWeatherAudio(
           gain.connect(panner);
           panner.connect(activeMaster);
           source.start();
+          source.onended = () => { try { source.disconnect(); } catch { /* already disconnected */ } };
         } else {
-          // Fallback if sample loading fails.
           playThunder(activeCtx, activeMaster, volume);
         }
       }
     }, delay);
+    thunderTimersRef.current.add(timerId);
   }, [enabled, volume]);
 
   // ── Cleanup ────────────────────────────────────────────────
   useEffect(() => {
     return () => {
-      if (ctxRef.current && ctxRef.current.state !== 'closed') {
-        ctxRef.current.close();
+      // Clear pending thunder timers
+      for (const id of thunderTimersRef.current) clearTimeout(id);
+      thunderTimersRef.current.clear();
+      // Invalidate module-level caches tied to this context
+      if (ctxRef.current) {
+        if (sharedNoiseCtx === ctxRef.current) {
+          sharedNoiseBuffer = null;
+          sharedNoiseCtx = null;
+        }
+        if (thunderCache?.ctx === ctxRef.current) {
+          thunderCache = null;
+        }
+        if (ctxRef.current.state !== 'closed') {
+          ctxRef.current.close();
+        }
       }
       initedRef.current = false;
     };
