@@ -1,11 +1,12 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
 import { WeatherType, WeatherData, WeatherConfig, DEFAULT_CONFIG, WeatherTransitionConfig, WeatherTransitionState } from './weather-types';
 import WeatherCanvas from './WeatherCanvas';
 import FogOverlay from './FogOverlay';
 import CloudOverlay from './CloudOverlay';
 import BottomNav from './BottomNav';
+import { useWeatherAudio } from './useWeatherAudio';
 
 interface WeatherContextType {
   weather: WeatherType;
@@ -17,6 +18,10 @@ interface WeatherContextType {
   setConfig: (config: Partial<WeatherConfig>) => void;
     transition: WeatherTransitionState;
     setTransitionConfig: (config: Partial<WeatherTransitionConfig>) => void;
+  soundEnabled: boolean;
+  setSoundEnabled: (v: boolean) => void;
+  soundVolume: number;
+  setSoundVolume: (v: number) => void;
 }
 
 const WeatherContext = createContext<WeatherContextType | undefined>(undefined);
@@ -50,6 +55,8 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
   });
     const [isAuto, setIsAuto] = useState<boolean>(false);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(false);
+  const [soundVolume, setSoundVolume] = useState<number>(0.6);
 
   const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 
@@ -210,6 +217,13 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
 
   const toggleAuto = () => setIsAuto(!isAuto);
 
+  // Audio system
+  const { initAudio, triggerThunder } = useWeatherAudio(weather, config, soundEnabled, soundVolume);
+
+  const handleUserInteraction = useCallback(() => {
+    initAudio();
+  }, [initAudio]);
+
   // Manual override handler
   const applyWeather = (w: WeatherType, disableAuto = true) => {
       if (disableAuto) {
@@ -280,10 +294,14 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
             config,
             setConfig,
             transition: transitionState,
-            setTransitionConfig
+            setTransitionConfig,
+            soundEnabled,
+            setSoundEnabled,
+            soundVolume,
+            setSoundVolume,
         }}
     >
-            <div className="min-h-screen relative overflow-hidden">
+            <div className="min-h-screen relative overflow-hidden" onClick={handleUserInteraction}>
                 {/* Background crossfade */}
                 <div
                     className={`absolute inset-0 transition-opacity duration-700 ${getBackgroundClass(transitionFrom)}`}
@@ -310,6 +328,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
                         config={config}
                         opacity={toOpacity}
                         className="z-0"
+                        onLightningStrike={triggerThunder}
                 />
 
                 {/* Overlays crossfade */}

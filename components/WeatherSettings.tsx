@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Github } from 'lucide-react';
+import { Github, Volume2, VolumeX } from 'lucide-react';
 import { useWeather } from './WeatherProvider';
 import { WeatherType } from './weather-types';
 
 export default function WeatherSettings() {
-    const { weather, setWeather, config, setConfig, transition, setTransitionConfig, isAuto, toggleAuto } = useWeather();
+    const { weather, setWeather, config, setConfig, transition, setTransitionConfig, isAuto, toggleAuto, soundEnabled, setSoundEnabled } = useWeather();
     const [isOpen, setIsOpen] = useState(true);
 
     useEffect(() => {
@@ -115,6 +115,24 @@ export default function WeatherSettings() {
                     </div>
                 </div>
 
+                {/* Sound Control */}
+                <div className="space-y-3 pt-2 border-t border-white/5">
+                    <div className="flex items-center justify-between">
+                        <div className="flex flex-col">
+                            <span className="text-xs text-white/80">音效</span>
+                            <span className="text-[10px] text-white/40">雨声/风声/雷声</span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setSoundEnabled(!soundEnabled)}
+                            className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full transition-all ${soundEnabled ? 'bg-blue-500/80 text-white shadow-lg shadow-blue-500/30' : 'bg-white/10 text-white/60 border border-white/10'}`}
+                        >
+                            {soundEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+                            {soundEnabled ? '开启' : '关闭'}
+                        </button>
+                    </div>
+                </div>
+
                 {/* 2. Weather Type Selector */}
                 <div className="space-y-2">
                     <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest">天气模式</h3>
@@ -213,7 +231,7 @@ export default function WeatherSettings() {
                                 </div>
                                 <input
                                     type="range"
-                                    min="0.1"
+                                    min="0.5"
                                     max="3.0"
                                     step="0.1"
                                     value={config.speed}

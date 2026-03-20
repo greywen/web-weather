@@ -9,12 +9,18 @@ interface WeatherCanvasProps {
   config: WeatherConfig;
   opacity?: number;
   className?: string;
+  onLightningStrike?: () => void;
 }
 
-export default function WeatherCanvas({ weather, sunProgress, config, opacity = 1, className = '' }: WeatherCanvasProps) {
+export default function WeatherCanvas({ weather, sunProgress, config, opacity = 1, className = '', onLightningStrike }: WeatherCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>(0);
+  const thunderEnabledRef = useRef(Boolean(config.thunder));
+  const thunderTriggerOnceRef = useRef(false);
   
+  const onLightningStrikeRef = useRef(onLightningStrike);
+  onLightningStrikeRef.current = onLightningStrike;
+
   // 使用 Ref 存储最新配置，避免 useEffect 重复触发导致动画重置
   const configRef = useRef(config);
   const opacityRef = useRef(opacity);
@@ -23,6 +29,14 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
   useEffect(() => {
     configRef.current = config;
   }, [config]);
+
+  useEffect(() => {
+    const thunderNow = Boolean(config.thunder);
+    if (!thunderEnabledRef.current && thunderNow) {
+      thunderTriggerOnceRef.current = true;
+    }
+    thunderEnabledRef.current = thunderNow;
+  }, [config.thunder]);
 
   useEffect(() => {
     opacityRef.current = opacity;
@@ -778,8 +792,17 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
     
     let lightnings: Lightning[] = [];
     let fogs: FogPuff[] = [];
-    let lightningTimer = 0;
+    let nextLightningAt = 0;
     let flashOpacity = 0;
+    let lightningCount = 0;
+
+    const getNextLightningDelayMs = () => {
+      // Base interval 6-14s, progressively longer as more strikes occur.
+      // Each strike adds ~2s to the base, capped so it doesn't grow forever.
+      const extraDelay = Math.min(lightningCount * 2000, 20000);
+      lightningCount++;
+      return 6000 + extraDelay + Math.random() * 8000;
+    };
 
     const initParticles = () => {
       // 重置所有粒子系统
@@ -791,11 +814,13 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
       lightnings = [];
       fogs = [];
       flashOpacity = 0;
+      lightningCount = 0;
       
       const { particleCount } = configRef.current;
 
       if (weather === 'rainy') {
         rainData.setCount(particleCount);
+        nextLightningAt = performance.now() + getNextLightningDelayMs();
       } else if (weather === 'snowy') {
         snowPile = new SnowPile();
         for (let i = 0; i < particleCount; i++) {
@@ -915,12 +940,22 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
 
         // Thunder Logic
         if (thunder) {
-            lightningTimer--;
-            if (lightningTimer <= 0) {
+          if (thunderTriggerOnceRef.current) {
+             flashOpacity = 0.6 + Math.random() * 0.4;
+             lightnings.push(new Lightning(width, height));
+             nextLightningAt = now + getNextLightningDelayMs();
+             onLightningStrikeRef.current?.();
+             thunderTriggerOnceRef.current = false;
+          }
+
+            if (now >= nextLightningAt) {
                  flashOpacity = 0.6 + Math.random() * 0.4;
                  lightnings.push(new Lightning(width, height));
-                 lightningTimer = Math.random() * 300 + 60;
+                 nextLightningAt = now + getNextLightningDelayMs();
+                 onLightningStrikeRef.current?.();
             }
+        } else {
+          thunderTriggerOnceRef.current = false;
         }
 
         for(let i = lightnings.length - 1; i>=0; i--) {
