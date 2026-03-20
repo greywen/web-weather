@@ -16,7 +16,7 @@ const weatherEmoji: Record<WeatherType, string> = {
 };
 
 export default function WeatherSettings() {
-    const { weather, setWeather, config, setConfig, transition, setTransitionConfig, isAuto, toggleAuto, soundEnabled, setSoundEnabled, immersive, setImmersive } = useWeather();
+    const { weather, setWeather, config, setConfig, transition, setTransitionConfig, isAuto, toggleAuto, soundEnabled, setSoundEnabled, immersive, setImmersive, lastUpdated } = useWeather();
     const { t, locale, setLocale } = useI18n();
     const [isOpen, setIsOpen] = useState(true);
     const [menuOpen, setMenuOpen] = useState(false);
@@ -115,13 +115,20 @@ export default function WeatherSettings() {
                             <span className="text-xs text-white/80">{t('weatherMode')}</span>
                             <span className="text-[10px] text-white/40">{t('weatherModeDesc')}</span>
                         </div>
-                        <button
-                            type="button"
-                            onClick={toggleAuto}
-                            className={`text-xs font-semibold px-2.5 py-1 rounded-full transition-all ${isAuto ? 'bg-green-500/80 text-white' : 'bg-white/10 text-white/60 border border-white/10'}`}
-                        >
-                            {isAuto ? t('auto') : t('manual')}
-                        </button>
+                        <div className="flex items-center gap-2">
+                            {isAuto && lastUpdated && (
+                                <span className="text-[10px] text-white/30" title={lastUpdated.toLocaleString()}>
+                                    {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                            )}
+                            <button
+                                type="button"
+                                onClick={toggleAuto}
+                                className={`text-xs font-semibold px-2.5 py-1 rounded-full transition-all ${isAuto ? 'bg-green-500/80 text-white' : 'bg-white/10 text-white/60 border border-white/10'}`}
+                            >
+                                {isAuto ? t('auto') : t('manual')}
+                            </button>
+                        </div>
                     </div>
                     <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/5">
                         <div className="flex flex-col">

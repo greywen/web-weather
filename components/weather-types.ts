@@ -38,9 +38,22 @@ export const DEFAULT_CONFIG: WeatherConfig = {
 export interface WeatherData {
   type: WeatherType;
   temperature: number;
+  apparentTemperature: number; // Feels-like temperature (°C)
   isDay: boolean; // Whether it is daytime
   sunProgress: number; // 0 = sunrise, 0.5 = noon, 1 = sunset (used for sun position calculation)
   locationName: string;
+  // Detailed weather parameters from API
+  rain: number;           // Current rainfall (mm)
+  showers: number;        // Shower rainfall (mm)
+  snowfall: number;       // Snowfall (cm)
+  precipitation: number;  // Total precipitation (mm)
+  cloudCover: number;     // Cloud cover (0-100%)
+  windSpeed: number;      // Wind speed at 10m (km/h)
+  windDirection: number;  // Wind direction (0-360°)
+  windGusts: number;      // Wind gusts at 10m (km/h)
+  humidity: number;       // Relative humidity (0-100%)
+  visibility: number;     // Visibility (m)
+  weatherCode: number;    // WMO weather code
 }
 
 export interface WeatherState {

@@ -10,9 +10,10 @@ interface WeatherCanvasProps {
   opacity?: number;
   className?: string;
   onLightningStrike?: () => void;
+  onFpsUpdate?: (fps: number) => void;
 }
 
-export default function WeatherCanvas({ weather, sunProgress, config, opacity = 1, className = '', onLightningStrike }: WeatherCanvasProps) {
+export default function WeatherCanvas({ weather, sunProgress, config, opacity = 1, className = '', onLightningStrike, onFpsUpdate }: WeatherCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>(0);
   const thunderEnabledRef = useRef(Boolean(config.thunder));
@@ -20,6 +21,9 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
   
   const onLightningStrikeRef = useRef(onLightningStrike);
   onLightningStrikeRef.current = onLightningStrike;
+
+  const onFpsUpdateRef = useRef(onFpsUpdate);
+  onFpsUpdateRef.current = onFpsUpdate;
 
   // Store latest config in ref to avoid animation reset from useEffect re-triggering
   const configRef = useRef(config);
@@ -862,6 +866,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
         fpsDisplay = fpsFrameCount;
         fpsFrameCount = 0;
         fpsLastTime = now;
+        onFpsUpdateRef.current?.(fpsDisplay);
       }
       
       const { intensity, time = 12 } = configRef.current; // Use latest config
@@ -1033,13 +1038,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
           drawFogs(ctx, fogs, fogDensity);
       }
 
-      // Draw FPS
-      ctx.save();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-      ctx.font = '12px monospace';
-      ctx.textAlign = 'right';
-      ctx.fillText(`${fpsDisplay} FPS`, width - 10, 20);
-      ctx.restore();
+
 
       requestRef.current = requestAnimationFrame(animate);
     };
