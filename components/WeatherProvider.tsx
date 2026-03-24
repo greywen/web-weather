@@ -7,6 +7,7 @@ import FogOverlay from './FogOverlay';
 import CloudOverlay from './CloudOverlay';
 import { useWeatherAudio } from './useWeatherAudio';
 import { useI18n, formatTemp } from './i18n';
+import { CONFIG_STORAGE_KEYS, readConfigFromLocalStorage, saveConfigToLocalStorage } from '../lib/configStorage';
 
 const FPS_INITIAL = 0;
 
@@ -64,14 +65,11 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [forecastData, setForecastData] = useState<ForecastData | null>(null);
   const [soundEnabled, setSoundEnabledState] = useState<boolean>(() => {
-      if (typeof window !== 'undefined') {
-        return localStorage.getItem('web-weather-sound') === 'on';
-      }
-      return false;
+            return readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.sound) === 'on';
     });
   const setSoundEnabled = useCallback((v: boolean) => {
       setSoundEnabledState(v);
-      localStorage.setItem('web-weather-sound', v ? 'on' : 'off');
+            saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.sound, v ? 'on' : 'off');
   }, []);
   const [soundVolume, setSoundVolume] = useState<number>(0.6);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);

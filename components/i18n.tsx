@@ -1,12 +1,10 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { CONFIG_STORAGE_KEYS, readConfigFromLocalStorage, saveConfigToLocalStorage } from '../lib/configStorage';
 
 export type Locale = 'en' | 'zh';
 export type TemperatureUnit = '°C' | '°F';
-
-const LOCALE_STORAGE_KEY = 'web-weather-locale';
-const TEMP_UNIT_STORAGE_KEY = 'web-weather-temp-unit';
 
 export function convertTemp(celsius: number, unit: TemperatureUnit): number {
   return unit === '°F' ? celsius * 9 / 5 + 32 : celsius;
@@ -197,29 +195,25 @@ const I18nContext = createContext<I18nContextType | undefined>(undefined);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(LOCALE_STORAGE_KEY);
-      if (saved === 'en' || saved === 'zh') return saved;
-    }
+    const saved = readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.locale);
+    if (saved === 'en' || saved === 'zh') return saved;
     return 'en';
   });
   const [tempUnit, setTempUnitState] = useState<TemperatureUnit>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(TEMP_UNIT_STORAGE_KEY);
-      if (saved === '°C' || saved === '°F') return saved;
-    }
+    const saved = readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.temperatureUnit);
+    if (saved === '°C' || saved === '°F') return saved;
     return '°C';
   });
   const [mounted] = useState(() => typeof window !== 'undefined');
 
   const setLocale = useCallback((l: Locale) => {
     setLocaleState(l);
-    localStorage.setItem(LOCALE_STORAGE_KEY, l);
+    saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.locale, l);
   }, []);
 
   const setTemperatureUnit = useCallback((unit: TemperatureUnit) => {
     setTempUnitState(unit);
-    localStorage.setItem(TEMP_UNIT_STORAGE_KEY, unit);
+    saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.temperatureUnit, unit);
   }, []);
 
   const t = useCallback((key: TranslationKey): string => {
