@@ -63,3 +63,30 @@ export interface WeatherState {
   loading: boolean;
   error: string | null;
 }
+
+// Forecast types for 24h/7d timeline
+export interface HourlyForecast {
+  time: string;           // ISO 8601 datetime
+  temperature: number;    // °C
+  weatherCode: number;    // WMO code
+  precipitation: number;  // mm
+  windSpeed: number;      // km/h
+  cloudCover: number;     // 0-100%
+  humidity: number;       // 0-100%
+  type: WeatherType;      // Derived from WMO code
+}
+
+export interface DailyForecast {
+  date: string;           // ISO 8601 date
+  temperatureMax: number; // °C
+  temperatureMin: number; // °C
+  weatherCode: number;    // WMO code
+  precipitationSum: number; // mm total
+  windSpeedMax: number;   // km/h
+  type: WeatherType;      // Derived from WMO code
+}
+
+export interface ForecastData {
+  hourly: HourlyForecast[];
+  daily: DailyForecast[];
+}

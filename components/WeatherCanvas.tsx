@@ -89,7 +89,6 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
         const gravity = 0.2;
         let i = 0;
         while (i < this.count) {
-          this.vx[i]; // no horizontal drag
           this.vy[i] += gravity;
           this.x[i] += this.vx[i];
           this.y[i] += this.vy[i];
@@ -243,6 +242,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
     };
 
     // 3. Snowflake particles
+    // eslint-disable-next-line react-hooks/unsupported-syntax
     class SnowFlake {
       x: number;
       y: number;
@@ -302,6 +302,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
     }
 
     // Snow pile manager class
+    // eslint-disable-next-line react-hooks/unsupported-syntax
     class SnowPile {
         flakes: {x: number, y: number, size: number, life: number}[] = [];
 
@@ -360,7 +361,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
           // Draw base layer first (ice/snow)
           ctx.fillStyle = baseColor;
           ctx.beginPath();
-          for (let f of this.flakes) {
+          for (const f of this.flakes) {
             // Draw snow chunks, overlapping to form irregular surface
             ctx.moveTo(f.x, f.y);
             ctx.arc(f.x, f.y, f.size * f.life, Math.PI, 0);
@@ -394,9 +395,9 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
         }
     }
 
-
     // 4. Sun effect
     // Includes: sun core, star rays, and bottom lens flares
+  // eslint-disable-next-line react-hooks/unsupported-syntax
     class SunEffect {
         // Lens flares / bokeh configuration
         flares: { 
@@ -518,8 +519,8 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
             ctx.globalCompositeOperation = 'source-over';
         }
     }
-
     // 5. Lightning - enhanced version
+  // eslint-disable-next-line react-hooks/unsupported-syntax
     class Lightning {
         life: number;
         x: number;
@@ -613,115 +614,6 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
         }
     }
 
-    // 6. Cloud - realistic stratocumulus optimization
-    class Cloud {
-      x: number;
-      y: number;
-      speed: number;
-      scale: number;
-      // Store the set of circles composing the cloud
-      puffs: {x: number, y: number, r: number, opacity: number}[];
-        
-      constructor(width: number, height: number) {
-        // Clouds are generally large and slow
-        this.scale = Math.random() * 0.6 + 0.7; // 0.7 - 1.3
-        this.x = Math.random() * width;
-        this.y = Math.random() * (height * 0.45); 
-        this.speed = (Math.random() * 0.12 + 0.04); 
-            
-        this.puffs = [];
-        // Build thicker cumulus: main body + side clusters + flat bottom
-        const coreRadius = (55 + Math.random() * 20) * this.scale;
-        this.puffs.push({ x: 0, y: 0, r: coreRadius, opacity: 1 });
-
-        // Main body wings
-        const wingCount = 5 + Math.floor(Math.random() * 4);
-        for (let i = 0; i < wingCount; i++) {
-          const offsetX = (Math.random() * 120 - 60) * this.scale;
-          const offsetY = (Math.random() * 30 + 5) * this.scale; 
-          const r = (25 + Math.random() * 30) * this.scale;
-          this.puffs.push({
-            x: offsetX,
-            y: offsetY,
-            r,
-            opacity: 0.85 + Math.random() * 0.15,
-          });
-        }
-
-        // Top small puffs, add depth
-        const topCount = 3 + Math.floor(Math.random() * 3);
-        for (let i = 0; i < topCount; i++) {
-          const offsetX = (Math.random() * 90 - 45) * this.scale;
-          const offsetY = -(Math.random() * 25 + 10) * this.scale;
-          const r = (18 + Math.random() * 20) * this.scale;
-          this.puffs.push({
-            x: offsetX,
-            y: offsetY,
-            r,
-            opacity: 0.8 + Math.random() * 0.2,
-          });
-        }
-      }
-        
-        update(width: number, speedMult: number) {
-             this.x += this.speed * speedMult;
-             if (this.x > width + 200 * this.scale) {
-                 this.x = -200 * this.scale;
-                 this.y = Math.random() * (window.innerHeight * 0.4); // Random height on reset
-             }
-        }
-        
-        draw(ctx: CanvasRenderingContext2D, cloudCover: number) {
-           const baseOpacity = 0.25 + cloudCover * 0.65; // Higher cloud cover, more prominent clouds
-             
-           ctx.save();
-           ctx.translate(this.x, this.y);
-           // Flatten cloud, more like stratocumulus
-           ctx.scale(1.4, 0.9);
-
-           // 1. Soft shadow layer (blur + offset)
-           ctx.save();
-           ctx.filter = `blur(${8 * this.scale}px)`;
-           ctx.globalAlpha = baseOpacity * 0.35;
-           ctx.fillStyle = 'rgba(120, 135, 155, 1)';
-           ctx.beginPath();
-           for (let p of this.puffs) {
-             ctx.moveTo(p.x + 18, p.y + 16);
-             ctx.arc(p.x + 18, p.y + 16, p.r, 0, Math.PI * 2);
-           }
-           ctx.fill();
-           ctx.restore();
-
-           // 2. Body layer (warm white + cool gray gradient)
-           for (let p of this.puffs) {
-             const lightX = p.x - p.r * 0.2;
-             const lightY = p.y - p.r * 0.25;
-             const g = ctx.createRadialGradient(lightX, lightY, p.r * 0.2, p.x, p.y, p.r);
-             g.addColorStop(0, `rgba(255, 255, 255, ${baseOpacity * 0.95 * p.opacity})`);
-             g.addColorStop(0.55, `rgba(235, 240, 248, ${baseOpacity * 0.75 * p.opacity})`);
-             g.addColorStop(1, 'rgba(220, 228, 238, 0)');
-             ctx.fillStyle = g;
-             ctx.beginPath();
-             ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-             ctx.fill();
-           }
-
-           // 3. Top highlight (subtle screen blend)
-           ctx.globalCompositeOperation = 'screen';
-           ctx.globalAlpha = baseOpacity * 0.25;
-           for (let p of this.puffs) {
-             const g2 = ctx.createRadialGradient(p.x - p.r * 0.1, p.y - p.r * 0.35, p.r * 0.1, p.x, p.y, p.r * 0.8);
-             g2.addColorStop(0, 'rgba(255, 255, 255, 1)');
-             g2.addColorStop(1, 'rgba(255, 255, 255, 0)');
-             ctx.fillStyle = g2;
-             ctx.beginPath();
-             ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-             ctx.fill();
-           }
-           ctx.restore();
-        }
-    }
-
     // 7. Fog - offscreen canvas cached gradient texture
     const FOG_TEX_SIZE = 128;
     const fogTexCanvas = document.createElement('canvas');
@@ -740,6 +632,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
       fogTexCtx.fillRect(0, 0, FOG_TEX_SIZE, FOG_TEX_SIZE);
     })();
 
+    // eslint-disable-next-line react-hooks/unsupported-syntax
     class FogPuff {
         x: number;
         y: number;
@@ -748,7 +641,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
         speed: number;
         opacity: number;
         oscillationOffset: number;
-        
+
         constructor(canvasW: number, canvasH: number) {
             const minDim = Math.min(canvasW, canvasH);
             this.x = Math.random() * (canvasW + 400) - 200;
@@ -799,7 +692,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
     let snows: SnowFlake[] = [];
     let sunEffect: SunEffect | null = null;
     let snowPile: SnowPile | null = null;
-    
+
     let lightnings: Lightning[] = [];
     let fogs: FogPuff[] = [];
     let nextLightningAt = 0;
@@ -825,7 +718,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
       fogs = [];
       flashOpacity = 0;
       lightningCount = 0;
-      
+
       const { particleCount } = configRef.current;
 
       if (weather === 'rainy') {
@@ -847,7 +740,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
     };
 
     initParticles();
-    
+
     // REMOVED drawIceVignette
 
     // --- FPS counter ---

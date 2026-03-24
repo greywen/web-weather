@@ -1,11 +1,12 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
-import { WeatherType, WeatherData, WeatherConfig, DEFAULT_CONFIG, WeatherTransitionConfig, WeatherTransitionState } from './weather-types';
+import { WeatherType, WeatherData, WeatherConfig, DEFAULT_CONFIG, WeatherTransitionConfig, WeatherTransitionState, ForecastData, HourlyForecast, DailyForecast } from './weather-types';
 import WeatherCanvas from './WeatherCanvas';
 import FogOverlay from './FogOverlay';
 import CloudOverlay from './CloudOverlay';
 import { useWeatherAudio } from './useWeatherAudio';
+import { useI18n, formatTemp } from './i18n';
 
 const FPS_INITIAL = 0;
 
@@ -15,6 +16,7 @@ interface WeatherContextType {
   isAuto: boolean;
   toggleAuto: () => void;
   weatherData: WeatherData | null;
+  forecastData: ForecastData | null;
   config: WeatherConfig;
   setConfig: (config: Partial<WeatherConfig>) => void;
     transition: WeatherTransitionState;
@@ -39,6 +41,7 @@ export const useWeather = () => {
 };
 
 export const WeatherProvider = ({ children }: { children: ReactNode }) => {
+    const { temperatureUnit } = useI18n();
     const [weather, setWeatherState] = useState<WeatherType>('sunny');
     const [currentWeather, setCurrentWeather] = useState<WeatherType>('sunny');
     const [transitionFrom, setTransitionFrom] = useState<WeatherType>('sunny');
@@ -59,11 +62,22 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
   });
     const [isAuto, setIsAuto] = useState<boolean>(false);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(false);
+  const [forecastData, setForecastData] = useState<ForecastData | null>(null);
+  const [soundEnabled, setSoundEnabledState] = useState<boolean>(() => {
+      if (typeof window !== 'undefined') {
+        return localStorage.getItem('web-weather-sound') === 'on';
+      }
+      return false;
+    });
+  const setSoundEnabled = useCallback((v: boolean) => {
+      setSoundEnabledState(v);
+      localStorage.setItem('web-weather-sound', v ? 'on' : 'off');
+  }, []);
   const [soundVolume, setSoundVolume] = useState<number>(0.6);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [immersive, setImmersiveState] = useState<boolean>(false);
   const [fps, setFps] = useState<number>(FPS_INITIAL);
+    const fetchWeatherRef = useRef<(lat: number, lon: number) => Promise<void>>(async () => {});
 
   const setImmersive = useCallback((v: boolean) => {
     setImmersiveState(v);
@@ -206,16 +220,41 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
       };
   };
 
+  // Auto mode handler: apply weather type + real data-driven config
+  const applyWeatherFromData = (w: WeatherType, data: WeatherData) => {
+      setWeatherState(w);
+
+      // Use real weather data to drive config
+      const now = new Date();
+      const currentTime = now.getHours() + now.getMinutes() / 60;
+      setConfigState(mapWeatherDataToConfig(data, currentTime));
+
+      const from = isTransitioning
+          ? (transitionProgress < 0.5 ? transitionFrom : transitionTo)
+          : currentWeather;
+
+      setTransitionFrom(from);
+      setTransitionTo(w);
+      setTransitionProgressState(0);
+
+      startTransition(w, 0);
+  };
+
   const fetchWeather = async (lat: number, lon: number) => {
       try {
           const res = await fetch(
               `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
               `&current=temperature_2m,apparent_temperature,relative_humidity_2m,rain,showers,snowfall,precipitation,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility,is_day` +
-              `&daily=sunrise,sunset&timezone=auto`
+              `&hourly=temperature_2m,weather_code,precipitation,wind_speed_10m,cloud_cover,relative_humidity_2m` +
+              `&daily=sunrise,sunset,weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max` +
+              `&forecast_days=8&timezone=auto`
           );
           const data = await res.json();
           
-          if (!data.current || !data.daily) return;
+          if (!data.current || !data.daily) {
+              setForecastData(null);
+              return;
+          }
 
           const current = data.current;
           const daily = data.daily;
@@ -253,6 +292,47 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
           };
 
           setWeatherData(newWeatherData);
+
+          // Parse forecast data
+          if (data.hourly && data.daily) {
+              const nowTime = new Date();
+              const currentHourIndex = data.hourly.time.findIndex((t: string) => new Date(t) >= nowTime);
+              const startIndex = Math.max(0, currentHourIndex - 1);
+              const hourlySlice = data.hourly.time.slice(startIndex, startIndex + 25);
+
+              const hourly: HourlyForecast[] = hourlySlice.map((_: string, i: number) => {
+                  const idx = startIndex + i;
+                  const code = data.hourly.weather_code[idx] ?? 0;
+                  const temp = data.hourly.temperature_2m[idx] ?? 0;
+                  return {
+                      time: data.hourly.time[idx],
+                      temperature: temp,
+                      weatherCode: code,
+                      precipitation: data.hourly.precipitation[idx] ?? 0,
+                      windSpeed: data.hourly.wind_speed_10m[idx] ?? 0,
+                      cloudCover: data.hourly.cloud_cover[idx] ?? 0,
+                      humidity: data.hourly.relative_humidity_2m[idx] ?? 0,
+                      type: mapWmoCodeToType(code, temp),
+                  };
+              });
+
+              const dailyForecasts: DailyForecast[] = data.daily.time.slice(0, 7).map((date: string, i: number) => {
+                  const code = data.daily.weather_code[i] ?? 0;
+                  const maxTemp = data.daily.temperature_2m_max[i] ?? 0;
+                  return {
+                      date,
+                      temperatureMax: maxTemp,
+                      temperatureMin: data.daily.temperature_2m_min[i] ?? 0,
+                      weatherCode: code,
+                      precipitationSum: data.daily.precipitation_sum[i] ?? 0,
+                      windSpeedMax: data.daily.wind_speed_10m_max[i] ?? 0,
+                      type: mapWmoCodeToType(code, maxTemp),
+                  };
+              });
+
+              setForecastData({ hourly, daily: dailyForecasts });
+          }
+
           setLastUpdated(new Date());
           
           if (isAuto) {
@@ -262,8 +342,13 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
 
       } catch (err) {
           console.error("Failed to fetch weather", err);
+          setForecastData(null);
       }
   };
+
+  useEffect(() => {
+      fetchWeatherRef.current = fetchWeather;
+  });
 
   useEffect(() => {
     if (isAuto) {
@@ -271,15 +356,17 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
         if ("geolocation" in navigator) {
             navigator.geolocation.getCurrentPosition(
                 (position) => {
-                    fetchWeather(position.coords.latitude, position.coords.longitude);
+                    void fetchWeatherRef.current(position.coords.latitude, position.coords.longitude);
                 },
                 (error) => {
                     console.error("Geo error:", error);
-                    fetchWeather(51.50, -0.12);
+                    void fetchWeatherRef.current(51.50, -0.12);
                 }
             );
         } else {
-             fetchWeather(51.50, -0.12);
+             setTimeout(() => {
+                 void fetchWeatherRef.current(51.50, -0.12);
+             }, 0);
         }
 
         // 2. Weather Fetch Interval (10 minutes)
@@ -288,8 +375,8 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
              // but here just re-running simple logic)
              if ("geolocation" in navigator) {
                 navigator.geolocation.getCurrentPosition(
-                    (p) => fetchWeather(p.coords.latitude, p.coords.longitude),
-                    () => fetchWeather(51.50, -0.12)
+                    (p) => { void fetchWeatherRef.current(p.coords.latitude, p.coords.longitude); },
+                    () => { void fetchWeatherRef.current(51.50, -0.12); }
                 );
             }
         }, 10 * 60 * 1000); // 10 minutes
@@ -310,13 +397,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
             clearInterval(timeInterval);
         };
     }
-  }, [isAuto]);
-
-  useEffect(() => {
-      if (transitionFrom !== transitionTo && transitionProgress < 1) {
-          startTransition(transitionTo, transitionProgress);
-      }
-  }, [transitionFrom, transitionTo]);
+    }, [isAuto]);
 
   useEffect(() => {
       return () => {
@@ -341,26 +422,6 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
   const handleUserInteraction = useCallback(() => {
     initAudio();
   }, [initAudio]);
-
-  // Auto mode handler: apply weather type + real data-driven config
-  const applyWeatherFromData = (w: WeatherType, data: WeatherData) => {
-      setWeatherState(w);
-
-      // Use real weather data to drive config
-      const now = new Date();
-      const currentTime = now.getHours() + now.getMinutes() / 60;
-      setConfigState(mapWeatherDataToConfig(data, currentTime));
-
-      const from = isTransitioning
-          ? (transitionProgress < 0.5 ? transitionFrom : transitionTo)
-          : currentWeather;
-
-      setTransitionFrom(from);
-      setTransitionTo(w);
-      setTransitionProgressState(0);
-
-      startTransition(w, 0);
-  };
 
   // Manual override handler
   const applyWeather = (w: WeatherType, disableAuto = true) => {
@@ -414,7 +475,6 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
       case 'snowy': return 'bg-gradient-to-b from-gray-800 to-gray-400';
       case 'cloudy': return 'bg-gradient-to-b from-slate-400 to-slate-200';
       case 'foggy': return 'bg-gradient-to-b from-slate-600 to-slate-400';
-      // @ts-ignore
       case 'icy': return 'bg-gradient-to-b from-cyan-950 to-cyan-700';
       default: return 'bg-gray-900';
     }
@@ -441,6 +501,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
             isAuto, 
             toggleAuto, 
             weatherData,
+            forecastData,
             config,
             setConfig,
             transition: transitionState,
@@ -505,7 +566,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
                      <p>{fps} FPS</p>
                      {weatherData && isAuto && (
                        <>
-                         <p>{weatherData.temperature}°C</p>
+                         <p>{formatTemp(weatherData.temperature, temperatureUnit)}</p>
                          <p>Sun: {(weatherData.sunProgress * 100).toFixed(0)}%</p>
                        </>
                      )}

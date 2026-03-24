@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Github, Volume2, VolumeX, Maximize, Minimize } from 'lucide-react';
+import { useState } from 'react';
+import { Github } from 'lucide-react';
 import { useWeather } from './WeatherProvider';
 import { WeatherType } from './weather-types';
-import { useI18n, Locale, TranslationKey } from './i18n';
+import { useI18n, TranslationKey } from './i18n';
+import WeatherTimeline from './WeatherTimeline';
 
 const weatherEmoji: Record<WeatherType, string> = {
     sunny: '☀️',
@@ -17,17 +18,16 @@ const weatherEmoji: Record<WeatherType, string> = {
 
 export default function WeatherSettings() {
     const { weather, setWeather, config, setConfig, transition, setTransitionConfig, isAuto, toggleAuto, soundEnabled, setSoundEnabled, immersive, setImmersive, lastUpdated } = useWeather();
-    const { t, locale, setLocale } = useI18n();
-    const [isOpen, setIsOpen] = useState(true);
+    const { t, locale, setLocale, temperatureUnit, setTemperatureUnit } = useI18n();
+    const [isOpen, setIsOpen] = useState(() => {
+        if (typeof window === 'undefined') return true;
+        return window.innerWidth >= 768;
+    });
     const [menuOpen, setMenuOpen] = useState(false);
+    const [forecastOpen, setForecastOpen] = useState(true);
+    const [weatherTypeOpen, setWeatherTypeOpen] = useState(true);
 
     const weatherLabel = (type: WeatherType) => `${weatherEmoji[type]} ${t(type as TranslationKey)}`;
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-        const isMobile = window.innerWidth < 768;
-        setIsOpen(!isMobile);
-    }, []);
 
     const handleTypeChange = (type: WeatherType) => {
         setWeather(type);
@@ -39,11 +39,11 @@ export default function WeatherSettings() {
 
     return (
         <>
-            {/* Immersive mode: weather status badge at top-left, click to open panel */}
-            {immersive && !menuOpen && (
+            {/* Weather status badge: click to open panel (both modes) */}
+            {(immersive ? !menuOpen : !isOpen) && (
                 <button
                     type="button"
-                    onClick={() => setMenuOpen(true)}
+                    onClick={() => immersive ? setMenuOpen(true) : setIsOpen(true)}
                     className="fixed top-4 left-4 z-[70] flex items-center gap-2 rounded-lg bg-slate-900/70 backdrop-blur-sm text-white text-xs px-3 py-2 border border-white/10 hover:bg-slate-900/90 transition-all cursor-pointer"
                 >
                     <span>{weatherLabel(weather)}</span>
@@ -51,46 +51,42 @@ export default function WeatherSettings() {
                 </button>
             )}
 
-            {/* Normal mode UI */}
-            {!immersive && (
-            <button
-                type="button"
-                onClick={() => setIsOpen((open) => !open)}
-                className="fixed top-4 left-4 z-[60] rounded-full bg-slate-900/85 text-white text-xs px-3 py-2 shadow-lg border border-white/10 md:hidden"
-            >
-                {isOpen ? t('hidePanel') : t('showPanel')}
-            </button>
-            )}
-
             <div
                 className={`fixed z-[70] transition-all bg-slate-900/85 border border-white/10 rounded-xl shadow-2xl hover:bg-slate-900/90
-                    w-[90vw] max-w-sm left-1/2 -translate-x-1/2 top-16 p-4 md:p-5 md:w-80 md:left-4 md:translate-x-0 md:top-4
-                    max-h-[70vh] overflow-y-auto settings-scroll
-                    ${immersive
-                        ? (menuOpen ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 -translate-y-2 pointer-events-none')
-                        : `${isOpen ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 -translate-y-2 pointer-events-none'} md:opacity-100 md:pointer-events-auto md:translate-y-0`
+                    w-[92vw] max-w-[26rem] left-1/2 -translate-x-1/2 top-16 p-4 md:p-5 md:w-[22rem] md:max-w-[calc(100vw-2rem)] md:left-4 md:translate-x-0 md:top-4
+                    max-h-[70vh] overflow-y-auto overflow-x-hidden settings-scroll
+                    ${(immersive ? menuOpen : isOpen)
+                        ? 'opacity-100 translate-y-0 pointer-events-auto'
+                        : 'opacity-0 -translate-y-2 pointer-events-none'
                     }
                 `}
             >
-                <div className="flex justify-between items-center mb-4 md:mb-6">
-                    <h2 className="text-base md:text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                <div className="mx-auto w-full max-w-[21rem]">
+                <div className="flex justify-between items-center gap-2 mb-4 md:mb-6">
+                    <h2 className="text-base md:text-lg font-bold text-white tracking-tight flex items-center gap-2 whitespace-nowrap shrink-0">
                         {t('weatherControl')}
                     </h2>
-                    <div className="flex items-center gap-1.5">
-                        {immersive && (
-                            <button
-                                type="button"
-                                onClick={() => setMenuOpen(false)}
-                                className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 text-white hover:bg-white/20 hover:scale-110 transition-all border border-white/10"
-                                title={t('closePanel')}
-                            >
-                                ✕
-                            </button>
-                        )}
+                    <div className="flex items-center gap-1.5 flex-nowrap shrink-0">
+                        <button
+                            type="button"
+                            onClick={() => immersive ? setMenuOpen(false) : setIsOpen(false)}
+                            className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 text-white hover:bg-white/20 hover:scale-110 transition-all border border-white/10"
+                            title={t('closePanel')}
+                        >
+                            ✕
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setTemperatureUnit(temperatureUnit === '°C' ? '°F' : '°C')}
+                            className="flex items-center justify-center h-8 rounded-lg bg-white/10 text-white text-xs font-semibold px-2 whitespace-nowrap shrink-0 hover:bg-white/20 hover:scale-110 transition-all border border-white/10"
+                            title={t('temperatureUnit')}
+                        >
+                            {temperatureUnit}
+                        </button>
                         <button
                             type="button"
                             onClick={() => setLocale(locale === 'en' ? 'zh' : 'en')}
-                            className="flex items-center justify-center h-8 rounded-lg bg-white/10 text-white text-xs font-semibold px-2 hover:bg-white/20 hover:scale-110 transition-all border border-white/10"
+                            className="flex items-center justify-center h-8 rounded-lg bg-white/10 text-white text-xs font-semibold px-2 whitespace-nowrap shrink-0 hover:bg-white/20 hover:scale-110 transition-all border border-white/10"
                             title={t('language')}
                         >
                             {locale === 'en' ? '中文' : 'EN'}
@@ -161,9 +157,20 @@ export default function WeatherSettings() {
                     </div>
                 </div>
 
-                {/* Weather Type Selector */}
-                <div className="space-y-2">
-                    <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{t('weatherType')}</h3>
+                {/* Weather Forecast Timeline (above weather type) */}
+                <WeatherTimeline collapsed={!forecastOpen} onToggle={() => setForecastOpen(v => !v)} />
+
+                {/* Weather Type + Settings */}
+                <div className="space-y-4">
+                    <button
+                        type="button"
+                        onClick={() => setWeatherTypeOpen(v => !v)}
+                        className="flex items-center gap-1.5 w-full text-left group"
+                    >
+                        <span className={`text-[10px] transition-transform ${weatherTypeOpen ? 'rotate-90' : ''}`}>▶</span>
+                        <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest group-hover:text-white/60 transition-colors">{t('weatherType')}</h3>
+                    </button>
+                    {weatherTypeOpen && (<>
                     <div className="grid grid-cols-3 gap-2">
                         {(['sunny', 'rainy', 'snowy', 'cloudy', 'foggy'] as WeatherType[]).map((wt) => (
                             <button
@@ -179,11 +186,8 @@ export default function WeatherSettings() {
                             </button>
                         ))}
                     </div>
-                </div>
 
-                {/* Global Time Control */}
-                <div className="space-y-4">
-                    <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{t('globalSettings')}</h3>
+                    {/* Global Time Control */}
                     <div>
                         <div className="flex justify-between text-xs text-white/80 mb-1.5">
                             <span className="flex items-center gap-1">{t('time24h')}</span>
@@ -222,11 +226,8 @@ export default function WeatherSettings() {
                             className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
                         />
                     </div>
-                </div>
 
-                {/* 2. Sliders based on Type */}
-                <div className="space-y-4">
-                    <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{t('parameters')}</h3>
+                    {/* Type-specific Parameters */}
                     
                     {weather === 'sunny' && (
                         <div className="space-y-4">
@@ -427,8 +428,10 @@ export default function WeatherSettings() {
                             </div>
                         </div>
                     )}
+                    </>)}
                 </div>
 
+            </div>
             </div>
         </div>
         </>

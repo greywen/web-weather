@@ -795,10 +795,11 @@ export function useWeatherAudio(
 
   // ── Cleanup ────────────────────────────────────────────────
   useEffect(() => {
+    const thunderTimers = thunderTimersRef.current;
     return () => {
       // Clear pending thunder timers
-      for (const id of thunderTimersRef.current) clearTimeout(id);
-      thunderTimersRef.current.clear();
+      for (const id of thunderTimers) clearTimeout(id);
+      thunderTimers.clear();
       // Invalidate module-level caches tied to this context
       if (ctxRef.current) {
         if (sharedNoiseCtx === ctxRef.current) {

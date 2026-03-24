@@ -20,8 +20,6 @@ export default function CloudOverlay({ forcedWeather, opacity = 1 }: { forcedWea
   const speed = Math.max(0.2, config.speed ?? 1);
 
   const animationsRef = useRef<Animation[]>([]);
-  const speedRef = useRef(speed);
-  speedRef.current = speed;
 
   const startAnimations = useCallback((container: HTMLDivElement | null) => {
     // Cleanup previous
@@ -42,11 +40,11 @@ export default function CloudOverlay({ forcedWeather, opacity = 1 }: { forcedWea
         ],
         { duration, iterations: Infinity, easing: 'linear' },
       );
-      anim.playbackRate = speedRef.current;
+      anim.playbackRate = speed;
       anims.push(anim);
     }
     animationsRef.current = anims;
-  }, []);
+  }, [speed]);
 
   // Smoothly adjust playbackRate — no animation restart
   useEffect(() => {

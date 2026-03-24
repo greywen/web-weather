@@ -1,10 +1,20 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 
 export type Locale = 'en' | 'zh';
+export type TemperatureUnit = '°C' | '°F';
 
 const LOCALE_STORAGE_KEY = 'web-weather-locale';
+const TEMP_UNIT_STORAGE_KEY = 'web-weather-temp-unit';
+
+export function convertTemp(celsius: number, unit: TemperatureUnit): number {
+  return unit === '°F' ? celsius * 9 / 5 + 32 : celsius;
+}
+
+export function formatTemp(celsius: number, unit: TemperatureUnit): string {
+  return `${Math.round(convertTemp(celsius, unit))}°`;
+}
 
 const translations = {
   en: {
@@ -64,8 +74,30 @@ const translations = {
     moveSpeed: 'Move Speed',
     fogDensity: 'Fog Density',
 
-    // Language
+    // Language & Units
     language: 'Language',
+    temperatureUnit: 'Temperature Unit',
+
+    // Weather Timeline
+    weatherForecast: 'Weather Forecast',
+    hourly24h: '24 Hours',
+    daily7d: '7 Days',
+    now: 'Now',
+    today: 'Today',
+    tomorrow: 'Tomorrow',
+    feelsLike: 'Feels like',
+    precipitationAmount: 'Precipitation',
+    windSpeedLabel: 'Wind',
+    humidityLabel: 'Humidity',
+    high: 'H',
+    low: 'L',
+    mon: 'Mon',
+    tue: 'Tue',
+    wed: 'Wed',
+    thu: 'Thu',
+    fri: 'Fri',
+    sat: 'Sat',
+    sun: 'Sun',
   },
   zh: {
     // Panel
@@ -124,8 +156,30 @@ const translations = {
     moveSpeed: '移动速度',
     fogDensity: '雾浓度',
 
-    // Language
+    // Language & Units
     language: '语言',
+    temperatureUnit: '温度单位',
+
+    // Weather Timeline
+    weatherForecast: '天气预报',
+    hourly24h: '24小时',
+    daily7d: '7天',
+    now: '现在',
+    today: '今天',
+    tomorrow: '明天',
+    feelsLike: '体感温度',
+    precipitationAmount: '降水量',
+    windSpeedLabel: '风速',
+    humidityLabel: '湿度',
+    high: '高',
+    low: '低',
+    mon: '周一',
+    tue: '周二',
+    wed: '周三',
+    thu: '周四',
+    fri: '周五',
+    sat: '周六',
+    sun: '周日',
   },
 } as const;
 
@@ -135,25 +189,37 @@ interface I18nContextType {
   locale: Locale;
   setLocale: (locale: Locale) => void;
   t: (key: TranslationKey) => string;
+  temperatureUnit: TemperatureUnit;
+  setTemperatureUnit: (unit: TemperatureUnit) => void;
 }
 
 const I18nContext = createContext<I18nContextType | undefined>(undefined);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>('en');
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    const saved = localStorage.getItem(LOCALE_STORAGE_KEY);
-    if (saved === 'en' || saved === 'zh') {
-      setLocaleState(saved);
+  const [locale, setLocaleState] = useState<Locale>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(LOCALE_STORAGE_KEY);
+      if (saved === 'en' || saved === 'zh') return saved;
     }
-    setMounted(true);
-  }, []);
+    return 'en';
+  });
+  const [tempUnit, setTempUnitState] = useState<TemperatureUnit>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(TEMP_UNIT_STORAGE_KEY);
+      if (saved === '°C' || saved === '°F') return saved;
+    }
+    return '°C';
+  });
+  const [mounted] = useState(() => typeof window !== 'undefined');
 
   const setLocale = useCallback((l: Locale) => {
     setLocaleState(l);
     localStorage.setItem(LOCALE_STORAGE_KEY, l);
+  }, []);
+
+  const setTemperatureUnit = useCallback((unit: TemperatureUnit) => {
+    setTempUnitState(unit);
+    localStorage.setItem(TEMP_UNIT_STORAGE_KEY, unit);
   }, []);
 
   const t = useCallback((key: TranslationKey): string => {
@@ -161,7 +227,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, [locale]);
 
   return (
-    <I18nContext.Provider value={{ locale, setLocale, t }}>
+    <I18nContext.Provider value={{ locale, setLocale, t, temperatureUnit: tempUnit, setTemperatureUnit }}>
       {mounted ? children : null}
     </I18nContext.Provider>
   );
