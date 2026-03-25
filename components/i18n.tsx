@@ -100,6 +100,12 @@ const translations = {
     fri: 'Fri',
     sat: 'Sat',
     sun: 'Sun',
+
+    // World Map
+    worldMap: 'World Map',
+    searchPlaceholder: 'Search city or place...',
+    confirmLocation: 'Confirm',
+    clickMapHint: 'Click on map to select location',
   },
   zh: {
     // Panel
@@ -186,6 +192,12 @@ const translations = {
     fri: '周五',
     sat: '周六',
     sun: '周日',
+
+    // World Map
+    worldMap: '世界地图',
+    searchPlaceholder: '搜索城市或地点...',
+    confirmLocation: '确认',
+    clickMapHint: '点击地图选择位置',
   },
 } as const;
 

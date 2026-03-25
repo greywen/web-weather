@@ -29,6 +29,8 @@ interface WeatherContextType {
   immersive: boolean;
   setImmersive: (v: boolean) => void;
   lastUpdated: Date | null;
+  setLocation: (lat: number, lon: number) => void;
+  customCoords: { lat: number; lon: number } | null;
 }
 
 const WeatherContext = createContext<WeatherContextType | undefined>(undefined);
@@ -61,7 +63,19 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
           time: now.getHours() + now.getMinutes() / 60
       };
   });
-    const [isAuto, setIsAuto] = useState<boolean>(false);
+  const [customCoords, setCustomCoords] = useState<{ lat: number; lon: number } | null>(() => {
+    const saved = readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.mapLocation);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed?.lat === 'number' && typeof parsed?.lon === 'number') return parsed;
+      } catch { /* corrupted data */ }
+    }
+    return null;
+  });
+  const [isAuto, setIsAuto] = useState<boolean>(() => {
+    return readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.autoMode) === 'on';
+  });
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [forecastData, setForecastData] = useState<ForecastData | null>(null);
   const [soundEnabled, setSoundEnabledState] = useState<boolean>(() => {
@@ -133,6 +147,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
   const setConfig = (newConfig: Partial<WeatherConfig>) => {
       setConfigState(prev => ({ ...prev, ...newConfig }));
       setIsAuto(false); // Manually changing config disables auto mode usually
+      saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.autoMode, 'off');
   };
 
   const setTransitionConfig = (newConfig: Partial<WeatherTransitionConfig>) => {
@@ -394,31 +409,37 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     if (isAuto) {
+        const fetchForLocation = (lat: number, lon: number) => {
+            void fetchWeatherRef.current(lat, lon);
+        };
+
         // 1. Initial Fetch
-        if ("geolocation" in navigator) {
+        if (customCoords) {
+            fetchForLocation(customCoords.lat, customCoords.lon);
+        } else if ("geolocation" in navigator) {
             navigator.geolocation.getCurrentPosition(
                 (position) => {
-                    void fetchWeatherRef.current(position.coords.latitude, position.coords.longitude);
+                    fetchForLocation(position.coords.latitude, position.coords.longitude);
                 },
                 (error) => {
                     console.error("Geo error:", error);
-                    void fetchWeatherRef.current(51.50, -0.12);
+                    fetchForLocation(51.50, -0.12);
                 }
             );
         } else {
              setTimeout(() => {
-                 void fetchWeatherRef.current(51.50, -0.12);
+                 fetchForLocation(51.50, -0.12);
              }, 0);
         }
 
         // 2. Weather Fetch Interval (10 minutes)
         const weatherInterval = setInterval(() => {
-             // Re-fetch logic (same as above, simplified for now to keep last known coords if possible, 
-             // but here just re-running simple logic)
-             if ("geolocation" in navigator) {
+             if (customCoords) {
+                fetchForLocation(customCoords.lat, customCoords.lon);
+             } else if ("geolocation" in navigator) {
                 navigator.geolocation.getCurrentPosition(
-                    (p) => { void fetchWeatherRef.current(p.coords.latitude, p.coords.longitude); },
-                    () => { void fetchWeatherRef.current(51.50, -0.12); }
+                    (p) => { fetchForLocation(p.coords.latitude, p.coords.longitude); },
+                    () => { fetchForLocation(51.50, -0.12); }
                 );
             }
         }, 10 * 60 * 1000); // 10 minutes
@@ -439,7 +460,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
             clearInterval(timeInterval);
         };
     }
-    }, [isAuto]);
+    }, [isAuto, customCoords]);
 
   useEffect(() => {
       return () => {
@@ -454,9 +475,19 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
       if (next) {
           // Avoid showing stale timestamp while waiting for the first fresh auto fetch.
           setLastUpdated(null);
+          setCustomCoords(null); // Reset to geolocation when manually toggling auto
       }
       setIsAuto(next);
+      saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.autoMode, next ? 'on' : 'off');
   };
+
+  const setLocation = useCallback((lat: number, lon: number) => {
+      setCustomCoords({ lat, lon });
+      setLastUpdated(null);
+      setIsAuto(true);
+      saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.mapLocation, JSON.stringify({ lat, lon }));
+      saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.autoMode, 'on');
+  }, []);
 
   // Audio system
   const { initAudio, triggerThunder } = useWeatherAudio(weather, config, soundEnabled, soundVolume);
@@ -469,6 +500,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
   const applyWeather = (w: WeatherType, disableAuto = true) => {
       if (disableAuto) {
           setIsAuto(false);
+          saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.autoMode, 'off');
       }
       setWeatherState(w);
 
@@ -563,6 +595,8 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
             immersive,
             setImmersive,
             lastUpdated,
+            setLocation,
+            customCoords,
         }}
     >
             <div className="min-h-screen relative overflow-hidden" onClick={handleUserInteraction}>

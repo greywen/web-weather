@@ -1,11 +1,14 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { Github } from 'lucide-react';
 import { useWeather } from './WeatherProvider';
 import { WeatherType } from './weather-types';
 import { useI18n, TranslationKey } from './i18n';
 import WeatherTimeline from './WeatherTimeline';
+
+const WorldMap = dynamic(() => import('./WorldMap'), { ssr: false });
 
 const weatherEmoji: Record<WeatherType, string> = {
     sunny: '☀️',
@@ -19,8 +22,9 @@ const weatherEmoji: Record<WeatherType, string> = {
 };
 
 export default function WeatherSettings() {
-    const { weather, setWeather, config, setConfig, transition, setTransitionConfig, isAuto, toggleAuto, soundEnabled, setSoundEnabled, immersive, setImmersive, lastUpdated } = useWeather();
+    const { weather, setWeather, config, setConfig, transition, setTransitionConfig, isAuto, toggleAuto, soundEnabled, setSoundEnabled, immersive, setImmersive, lastUpdated, setLocation, customCoords } = useWeather();
     const { t, locale, setLocale, temperatureUnit, setTemperatureUnit } = useI18n();
+    const [mapOpen, setMapOpen] = useState(false);
     const [isOpen, setIsOpen] = useState(() => {
         if (typeof window === 'undefined') return true;
         return window.innerWidth >= 768;
@@ -155,6 +159,22 @@ export default function WeatherSettings() {
                             className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full transition-all ${soundEnabled ? 'bg-blue-500/80 text-white shadow-lg shadow-blue-500/30' : 'bg-white/10 text-white/60 border border-white/10'}`}
                         >
                             {soundEnabled ? t('on') : t('off')}
+                        </button>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2.5 border-t border-white/5">
+                        <div className="flex flex-col">
+                            <span className="text-xs text-white/80">{t('worldMap' as TranslationKey)}</span>
+                            <span className="text-[10px] text-white/40">{t('clickMapHint' as TranslationKey)}</span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setMapOpen(true)}
+                            className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full transition-all bg-blue-500/15 text-blue-400 border border-blue-500/20 hover:bg-blue-500/25 hover:border-blue-500/30"
+                        >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" /><circle cx="12" cy="10" r="3" />
+                            </svg>
+                            {t('worldMap' as TranslationKey)}
                         </button>
                     </div>
                 </div>
@@ -573,6 +593,17 @@ export default function WeatherSettings() {
             </div>
             </div>
         </div>
+        {mapOpen && (
+            <WorldMap
+                onSelectLocation={(lat, lon) => {
+                    setLocation(lat, lon);
+                    setMapOpen(false);
+                }}
+                onClose={() => setMapOpen(false)}
+                initialLat={customCoords?.lat}
+                initialLon={customCoords?.lon}
+            />
+        )}
         </>
     );
 }

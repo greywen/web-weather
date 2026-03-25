@@ -4,6 +4,8 @@ export const CONFIG_STORAGE_KEYS = {
   sound: 'web-weather-sound',
   locale: 'web-weather-locale',
   temperatureUnit: 'web-weather-temp-unit',
+  mapLocation: 'web-weather-map-location',
+  autoMode: 'web-weather-auto-mode',
 } as const;
 
 export type ConfigStorageKey = (typeof CONFIG_STORAGE_KEYS)[keyof typeof CONFIG_STORAGE_KEYS];

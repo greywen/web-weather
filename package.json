@@ -24,6 +24,7 @@
   "dependencies": {
     "clsx": "^2.1.1",
     "framer-motion": "^12.34.0",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.563.0",
     "next": "16.1.6",
     "react": "19.2.3",
@@ -32,6 +33,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/leaflet": "^1.9.21",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
