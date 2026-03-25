@@ -140,16 +140,26 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // WMO Weather Code Mapping to our types
-  const mapWmoCodeToType = (code: number, temp: number): WeatherType => {
+  const mapWmoCodeToType = (code: number, temp: number, visibility?: number, windSpeed?: number, precipitation?: number): WeatherType => {
       // https://open-meteo.com/en/docs
-      if ([0, 1].includes(code)) return 'sunny';
-      if ([2, 3].includes(code)) return 'cloudy';
-      if ([45, 48].includes(code)) return 'foggy'; 
+      if ([96, 99].includes(code)) return 'hail';
       if ([51, 53, 55, 61, 63, 65, 80, 81, 82, 95].includes(code)) return 'rainy';
       if ([56, 57, 66, 67, 71, 73, 75, 77, 85, 86].includes(code)) return 'snowy';
+      if ([45, 48].includes(code)) return 'foggy'; 
+      
+      // Sandstorm heuristic: very low visibility + strong wind + no significant precipitation
+      // Open-Meteo has no dedicated sandstorm WMO code, so infer from conditions
+      if (visibility !== undefined && windSpeed !== undefined && precipitation !== undefined) {
+          if (visibility < 2000 && windSpeed > 40 && precipitation < 1 && ![45, 48].includes(code)) {
+              return 'sandstorm';
+          }
+      }
+      
+      if ([2, 3].includes(code)) return 'cloudy';
+      if ([0, 1].includes(code)) return 'sunny';
       
       // Special logic for Icy: Low temp + clear or slight rain
-      if (temp < 0 && [0, 1, 2, 3].includes(code)) return 'icy'; // icy is not in WeatherType yet? checking
+      if (temp < 0 && [0, 1, 2, 3].includes(code)) return 'icy';
       
       return 'sunny';
   };
@@ -193,6 +203,17 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
           particleCount = clamp(Math.round(data.snowfall * 100), 30, 400);
           speed = clamp(0.5 + data.snowfall * 0.1, 0.3, 2);
           intensity = clamp(data.snowfall / 5, 0.1, 1);
+      } else if (type === 'hail') {
+          // Hail: moderate background rain + hail pellets
+          const totalRain = data.rain + data.showers;
+          particleCount = clamp(Math.round(totalRain * 30), 5, 30);
+          speed = clamp(1.5 + data.windGusts * 0.02, 1.5, 4);
+          intensity = clamp(data.precipitation / 8, 0.3, 1);
+      } else if (type === 'sandstorm') {
+          // Sandstorm: particle count driven by wind intensity
+          particleCount = clamp(Math.round(data.windSpeed * 4), 80, 350);
+          speed = clamp(data.windSpeed / 20, 1, 3);
+          intensity = clamp(data.windSpeed / 50, 0.3, 1);
       } else if (type === 'sunny') {
           particleCount = 0;
           speed = 1;
@@ -205,6 +226,16 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
           intensity = 1;
       }
 
+      // Hail-specific config
+      const hailCount = type === 'hail'
+          ? clamp(Math.round(data.precipitation * 15), 10, 150)
+          : undefined;
+
+      // Sandstorm-specific config
+      const sandDensity = type === 'sandstorm'
+          ? clamp(1 - data.visibility / 5000, 0.2, 1)
+          : undefined;
+
       return {
           particleCount,
           speed,
@@ -215,6 +246,8 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
           thunder,
           cloudCover,
           fogDensity,
+          ...(hailCount !== undefined && { hailCount }),
+          ...(sandDensity !== undefined && { sandDensity }),
       };
   };
 
@@ -243,7 +276,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
           const res = await fetch(
               `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
               `&current=temperature_2m,apparent_temperature,relative_humidity_2m,rain,showers,snowfall,precipitation,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility,is_day` +
-              `&hourly=temperature_2m,weather_code,precipitation,wind_speed_10m,cloud_cover,relative_humidity_2m` +
+              `&hourly=temperature_2m,weather_code,precipitation,wind_speed_10m,cloud_cover,relative_humidity_2m,visibility` +
               `&daily=sunrise,sunset,weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max` +
               `&forecast_days=8&timezone=auto`
           );
@@ -267,7 +300,13 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
               progress = (now - sunrise) / (sunset - sunrise);
           }
 
-          const newWeatherType = mapWmoCodeToType(current.weather_code, current.temperature_2m);
+          const newWeatherType = mapWmoCodeToType(
+              current.weather_code,
+              current.temperature_2m,
+              current.visibility ?? 10000,
+              current.wind_speed_10m ?? 0,
+              current.precipitation ?? 0
+          );
           
           const newWeatherData: WeatherData = {
               type: newWeatherType,
@@ -302,29 +341,34 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
                   const idx = startIndex + i;
                   const code = data.hourly.weather_code[idx] ?? 0;
                   const temp = data.hourly.temperature_2m[idx] ?? 0;
+                  const hPrecip = data.hourly.precipitation[idx] ?? 0;
+                  const hWind = data.hourly.wind_speed_10m[idx] ?? 0;
+                  const hVis = data.hourly.visibility?.[idx] ?? 10000;
                   return {
                       time: data.hourly.time[idx],
                       temperature: temp,
                       weatherCode: code,
-                      precipitation: data.hourly.precipitation[idx] ?? 0,
-                      windSpeed: data.hourly.wind_speed_10m[idx] ?? 0,
+                      precipitation: hPrecip,
+                      windSpeed: hWind,
                       cloudCover: data.hourly.cloud_cover[idx] ?? 0,
                       humidity: data.hourly.relative_humidity_2m[idx] ?? 0,
-                      type: mapWmoCodeToType(code, temp),
-                  };
+                      type: mapWmoCodeToType(code, temp, hVis, hWind, hPrecip),
+                  } as HourlyForecast;
               });
 
               const dailyForecasts: DailyForecast[] = data.daily.time.slice(0, 7).map((date: string, i: number) => {
                   const code = data.daily.weather_code[i] ?? 0;
                   const maxTemp = data.daily.temperature_2m_max[i] ?? 0;
+                  const dPrecip = data.daily.precipitation_sum[i] ?? 0;
+                  const dWind = data.daily.wind_speed_10m_max[i] ?? 0;
                   return {
                       date,
                       temperatureMax: maxTemp,
                       temperatureMin: data.daily.temperature_2m_min[i] ?? 0,
                       weatherCode: code,
-                      precipitationSum: data.daily.precipitation_sum[i] ?? 0,
-                      windSpeedMax: data.daily.wind_speed_10m_max[i] ?? 0,
-                      type: mapWmoCodeToType(code, maxTemp),
+                      precipitationSum: dPrecip,
+                      windSpeedMax: dWind,
+                      type: mapWmoCodeToType(code, maxTemp, undefined, dWind, dPrecip),
                   };
               });
 
@@ -429,9 +473,15 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
       setWeatherState(w);
 
       // Reset weather-specific config to defaults, preserve global params (time)
+      const weatherDefaults: Partial<WeatherConfig> = w === 'hail'
+          ? { particleCount: 5, cloudCover: 0.8, hailCount: 30, speed: 2 }
+          : w === 'sandstorm'
+          ? { sandDensity: 0.6, speed: 1 }
+          : {};
       setConfigState(prev => ({
           ...DEFAULT_CONFIG,
           time: prev.time,
+          ...weatherDefaults,
       }));
 
       const from = isTransitioning
@@ -474,6 +524,8 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
       case 'cloudy': return 'bg-gradient-to-b from-slate-400 to-slate-200';
       case 'foggy': return 'bg-gradient-to-b from-slate-600 to-slate-400';
       case 'icy': return 'bg-gradient-to-b from-cyan-950 to-cyan-700';
+      case 'hail': return 'bg-gradient-to-b from-slate-900 to-slate-600';
+      case 'sandstorm': return 'bg-gradient-to-b from-amber-900 to-yellow-700';
       default: return 'bg-gray-900';
     }
   };

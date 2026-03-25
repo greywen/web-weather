@@ -1,4 +1,4 @@
-export type WeatherType = 'sunny' | 'rainy' | 'snowy' | 'cloudy' | 'foggy' | 'icy';
+export type WeatherType = 'sunny' | 'rainy' | 'snowy' | 'cloudy' | 'foggy' | 'icy' | 'hail' | 'sandstorm';
 
 export interface WeatherConfig {
   particleCount: number; // drops/flakes count
@@ -10,6 +10,8 @@ export interface WeatherConfig {
   thunder?: boolean;     // Thunderstorm toggle
   cloudCover?: number;   // 0-1 for cloudy
   fogDensity?: number;   // 0-1 for foggy
+  hailCount?: number;    // 0-150 hail pellets
+  sandDensity?: number;  // 0-1 sandstorm density
 }
 
 export interface WeatherTransitionConfig {
@@ -33,6 +35,8 @@ export const DEFAULT_CONFIG: WeatherConfig = {
   thunder: false,
   cloudCover: 0.1,
   fogDensity: 0.5,
+  hailCount: 30,
+  sandDensity: 0.6,
 };
 
 export interface WeatherData {

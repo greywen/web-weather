@@ -14,7 +14,7 @@ const LAYERS: Array<{ distance: number; duration: number }> = [
 export default function CloudOverlay({ forcedWeather, opacity = 1 }: { forcedWeather?: WeatherType; opacity?: number }) {
   const { weather, config } = useWeather();
   const effectiveWeather = forcedWeather ?? weather;
-  const isCloudy = effectiveWeather === 'cloudy' || effectiveWeather === 'rainy';
+  const isCloudy = effectiveWeather === 'cloudy' || effectiveWeather === 'rainy' || effectiveWeather === 'hail';
 
   const cloudCover = config.cloudCover ?? 0.1;
   const speed = Math.max(0.2, config.speed ?? 1);

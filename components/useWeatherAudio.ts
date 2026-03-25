@@ -542,6 +542,32 @@ function createSnowAmbient(ctx: AudioContext, dest: AudioNode): AmbientSet {
   };
 }
 
+interface LoopSampleAmbient {
+  source: AudioBufferSourceNode | null;
+  gain: GainNode;
+  panner: StereoPannerNode;
+  started: boolean;
+}
+
+function createSandstormAmbient(ctx: AudioContext, dest: AudioNode): LoopSampleAmbient {
+  const panner = ctx.createStereoPanner();
+  panner.connect(dest);
+  const gain = ctx.createGain();
+  gain.gain.value = 0;
+  gain.connect(panner);
+  return { source: null, gain, panner, started: false };
+}
+
+/** Hail ambient: loops a loaded hail.mp3 sample */
+function createHailAmbient(ctx: AudioContext, dest: AudioNode): LoopSampleAmbient {
+  const panner = ctx.createStereoPanner();
+  panner.connect(dest);
+  const gain = ctx.createGain();
+  gain.gain.value = 0;
+  gain.connect(panner);
+  return { source: null, gain, panner, started: false };
+}
+
 // ── Main Hook ──────────────────────────────────────────────────
 
 export function useWeatherAudio(
@@ -555,6 +581,12 @@ export function useWeatherAudio(
   const rainRef = useRef<AmbientSet | null>(null);
   const windRef = useRef<AmbientSet | null>(null);
   const snowRef = useRef<AmbientSet | null>(null);
+  const sandstormRef = useRef<LoopSampleAmbient | null>(null);
+  const hailRef = useRef<LoopSampleAmbient | null>(null);
+  const sandstormBufferRef = useRef<AudioBuffer | null>(null);
+  const loadingSandstormRef = useRef(false);
+  const hailBufferRef = useRef<AudioBuffer | null>(null);
+  const loadingHailRef = useRef(false);
   const lightningBuffersRef = useRef<AudioBuffer[]>([]);
   const loadingLightningRef = useRef(false);
   const initedRef = useRef(false);
@@ -576,6 +608,38 @@ export function useWeatherAudio(
         layer.source.start();
         layer.started = true;
       }
+    }
+  }, []);
+
+  // Load hail sample
+  const loadHailSample = useCallback(async (ctx: AudioContext) => {
+    if (loadingHailRef.current || hailBufferRef.current) return;
+    loadingHailRef.current = true;
+    try {
+      const res = await fetch('/sounds/hail.mp3');
+      if (!res.ok) throw new Error('Failed to load hail sample');
+      const arr = await res.arrayBuffer();
+      hailBufferRef.current = await ctx.decodeAudioData(arr);
+    } catch {
+      // Hail sample unavailable — silent fallback
+    } finally {
+      loadingHailRef.current = false;
+    }
+  }, []);
+
+  // Load sandstorm sample
+  const loadSandstormSample = useCallback(async (ctx: AudioContext) => {
+    if (loadingSandstormRef.current || sandstormBufferRef.current) return;
+    loadingSandstormRef.current = true;
+    try {
+      const res = await fetch('/sounds/sandstorm.mp3');
+      if (!res.ok) throw new Error('Failed to load sandstorm sample');
+      const arr = await res.arrayBuffer();
+      sandstormBufferRef.current = await ctx.decodeAudioData(arr);
+    } catch {
+      // Sandstorm sample unavailable — silent fallback
+    } finally {
+      loadingSandstormRef.current = false;
     }
   }, []);
 
@@ -619,10 +683,14 @@ export function useWeatherAudio(
     rainRef.current = createRainAmbient(ctx, master);
     windRef.current = createWindAmbient(ctx, master);
     snowRef.current = createSnowAmbient(ctx, master);
+    sandstormRef.current = createSandstormAmbient(ctx, master);
+    hailRef.current = createHailAmbient(ctx, master);
 
-    // Preload user-provided lightning samples.
+    // Preload user-provided samples.
     void loadLightningSamples(ctx);
-  }, [loadLightningSamples]);
+    void loadHailSample(ctx);
+    void loadSandstormSample(ctx);
+  }, [loadLightningSamples, loadHailSample, loadSandstormSample]);
 
   // Resume context if suspended (browser autoplay policy)
   const resumeCtx = useCallback(() => {
@@ -665,8 +733,8 @@ export function useWeatherAudio(
 
         // Body volume scales with rain amount and speed
         fadeTo(rain.layers[0].gain, 0.25 * rainFactor + 0.05, fadeTime);
-        // Hiss — higher speed makes rain sound sharper
-        fadeTo(rain.layers[1].gain, 0.08 * rainFactor + 0.04 * speedRatio, fadeTime);
+        // Disable rain hiss layer to avoid persistent high-frequency "ssss" noise.
+        fadeTo(rain.layers[1].gain, 0, fadeTime);
         // Rumble
         fadeTo(rain.layers[2].gain, 0.12 * rainFactor + 0.03, fadeTime);
 
@@ -680,14 +748,15 @@ export function useWeatherAudio(
 
       // Wind panning from config.wind
       rain.panner.pan.setTargetAtTime(Math.max(-1, Math.min(1, config.wind / 3)), ctxRef.current.currentTime, 0.3);
-    } else {
-      // Fade out rain
+    } else if (weather !== 'hail') {
+      // Fade out rain (hail controls rain separately)
       if (rainRef.current) {
         for (const l of rainRef.current.layers) fadeTo(l.gain, 0, fadeTime);
       }
     }
 
     // ── Wind (for rainy with wind, snowy, cloudy) ────
+    // Note: hail and sandstorm manage wind in their own blocks
     const needsWind = (weather === 'rainy' && windAbs > 0.5)
       || weather === 'snowy'
       || weather === 'cloudy';
@@ -720,7 +789,8 @@ export function useWeatherAudio(
         ctxRef.current.currentTime,
         0.3
       );
-    } else {
+    } else if (weather !== 'hail' && weather !== 'sandstorm') {
+      // hail and sandstorm manage wind in their own blocks
       if (windRef.current) {
         for (const l of windRef.current.layers) fadeTo(l.gain, 0, fadeTime);
       }
@@ -749,6 +819,98 @@ export function useWeatherAudio(
       if (snowRef.current) {
         for (const l of snowRef.current.layers) fadeTo(l.gain, 0, fadeTime);
       }
+    }
+
+    // ── Hail ambient ─────────────────────────────────
+    if (weather === 'hail') {
+      const hail = hailRef.current;
+      const buf = hailBufferRef.current;
+      if (hail && buf) {
+        if (!hail.started) {
+          const source = ctxRef.current.createBufferSource();
+          source.buffer = buf;
+          source.loop = true;
+          source.connect(hail.gain);
+          source.start();
+          hail.source = source;
+          hail.started = true;
+        }
+        const hailCount = config.hailCount ?? 30;
+        const hailFactor = Math.min(hailCount / 150, 1);
+        fadeTo(hail.gain, 0.3 * hailFactor + 0.1, fadeTime);
+        hail.panner.pan.setTargetAtTime(
+          Math.max(-1, Math.min(1, config.wind / 3)),
+          ctxRef.current.currentTime,
+          0.3
+        );
+      }
+
+      // Hail also gets rain and wind ambients (only if particles exist)
+      ensureStarted(rainRef.current);
+      const rain = rainRef.current!;
+      if (config.particleCount === 0) {
+        for (const l of rain.layers) fadeTo(l.gain, 0, fadeTime);
+      } else {
+        const rainFactor = particleRatio * 0.4 + speedRatio * 0.3;
+        fadeTo(rain.layers[0].gain, 0.15 * rainFactor + 0.03, fadeTime);
+        fadeTo(rain.layers[1].gain, 0, fadeTime);
+        fadeTo(rain.layers[2].gain, 0.08 * rainFactor + 0.02, fadeTime);
+      }
+
+      const hailCount = config.hailCount ?? 30;
+      const hasHailOrRain = config.particleCount > 0 || hailCount > 0;
+      ensureStarted(windRef.current);
+      if (hasHailOrRain) {
+        fadeTo(windRef.current!.layers[0].gain, 0.1 + windAbs * 0.06, fadeTime);
+        fadeTo(windRef.current!.layers[1].gain, 0.04 + windAbs * 0.02, fadeTime);
+      } else {
+        for (const l of windRef.current!.layers) fadeTo(l.gain, 0, fadeTime);
+      }
+    } else {
+      // Stop hail loop when switching away
+      const hail = hailRef.current;
+      if (hail && hail.started) {
+        fadeTo(hail.gain, 0, fadeTime);
+      }
+    }
+
+    // ── Sandstorm ambient ────────────────────────────
+    if (weather === 'sandstorm') {
+      const sand = sandstormRef.current!;
+      const buf = sandstormBufferRef.current;
+      const density = config.sandDensity ?? 0.6;
+
+      if (buf && !sand.started) {
+        const source = ctxRef.current.createBufferSource();
+        source.buffer = buf;
+        source.loop = true;
+        source.connect(sand.gain);
+        source.start();
+        sand.source = source;
+        sand.started = true;
+      }
+
+      // Sandstorm sample volume scales with density and wind intensity.
+      const sandGain = Math.min(0.55, 0.32 * density + 0.08 + windAbs * 0.04);
+      fadeTo(sand.gain, sandGain, fadeTime);
+
+      sand.panner.pan.setTargetAtTime(
+        Math.max(-1, Math.min(1, config.wind / 3)),
+        ctxRef.current.currentTime,
+        0.3
+      );
+
+      // Sandstorm also drives heavy wind
+      ensureStarted(windRef.current);
+      fadeTo(windRef.current!.layers[0].gain, 0.15 + density * 0.1, fadeTime);
+      fadeTo(windRef.current!.layers[1].gain, 0.06 + density * 0.04, fadeTime);
+      windRef.current!.layers[0].filter.frequency.setTargetAtTime(
+        500 + windAbs * 200,
+        ctxRef.current.currentTime,
+        0.5
+      );
+    } else {
+      if (sandstormRef.current) fadeTo(sandstormRef.current.gain, 0, fadeTime);
     }
 
   }, [weather, config, enabled, volume, fadeTo, ensureStarted, resumeCtx]);

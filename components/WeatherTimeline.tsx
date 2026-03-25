@@ -12,6 +12,8 @@ const weatherIcon: Record<WeatherType, string> = {
     cloudy: '☁️',
     foggy: '🌫️',
     icy: '🧊',
+    hail: '🌨️',
+    sandstorm: '🌪️',
 };
 
 const dayKeys: TranslationKey[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];

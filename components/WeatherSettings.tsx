@@ -14,6 +14,8 @@ const weatherEmoji: Record<WeatherType, string> = {
     cloudy: '☁️',
     foggy: '🌫️',
     icy: '🧊',
+    hail: '🌨️',
+    sandstorm: '🌪️',
 };
 
 export default function WeatherSettings() {
@@ -172,7 +174,7 @@ export default function WeatherSettings() {
                     </button>
                     {weatherTypeOpen && (<>
                     <div className="grid grid-cols-3 gap-2">
-                        {(['sunny', 'rainy', 'snowy', 'cloudy', 'foggy'] as WeatherType[]).map((wt) => (
+                        {(['sunny', 'rainy', 'snowy', 'cloudy', 'foggy', 'hail', 'sandstorm'] as WeatherType[]).map((wt) => (
                             <button
                                 key={wt}
                                 onClick={() => handleTypeChange(wt)}
@@ -425,6 +427,143 @@ export default function WeatherSettings() {
                                     onChange={(e) => handleConfigChange('fogDensity', parseFloat(e.target.value))}
                                     className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
                                 />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* HAIL */}
+                    {weather === 'hail' && (
+                        <div className="space-y-5">
+                            <div>
+                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
+                                    <span>{t('cloudCover')}</span>
+                                    <span className="font-mono text-white/50">{((config.cloudCover !== undefined ? config.cloudCover : 0.1) * 100).toFixed(0)}%</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.05"
+                                    value={config.cloudCover !== undefined ? config.cloudCover : 0.8}
+                                    onChange={(e) => handleConfigChange('cloudCover', parseFloat(e.target.value))}
+                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
+                                    <span>{t('rainfall')}</span>
+                                    <span className="font-mono text-white/50">{config.particleCount}</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="30"
+                                    step="1"
+                                    value={config.particleCount}
+                                    onChange={(e) => handleConfigChange('particleCount', parseInt(e.target.value))}
+                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
+                                    <span>{t('hailCount')}</span>
+                                    <span className="font-mono text-white/50">{config.hailCount !== undefined ? config.hailCount : 30}</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="10"
+                                    max="150"
+                                    step="5"
+                                    value={config.hailCount !== undefined ? config.hailCount : 30}
+                                    onChange={(e) => handleConfigChange('hailCount', parseInt(e.target.value))}
+                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
+                                    <span>{t('fallSpeed')}</span>
+                                    <span className="font-mono text-white/50">{config.speed.toFixed(1)}x</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="0.5"
+                                    max="3.0"
+                                    step="0.1"
+                                    value={config.speed}
+                                    onChange={(e) => handleConfigChange('speed', parseFloat(e.target.value))}
+                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
+                                    <span>{t('wind')}</span>
+                                    <span className="font-mono text-white/50">{config.wind.toFixed(1)}</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="-3.0"
+                                    max="3.0"
+                                    step="0.1"
+                                    value={config.wind}
+                                    onChange={(e) => handleConfigChange('wind', parseFloat(e.target.value))}
+                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                />
+                                <div className="flex justify-between text-[10px] text-white/20 mt-1">
+                                    <span>{t('leftWind')}</span>
+                                    <span>{t('rightWind')}</span>
+                                </div>
+                            </div>
+                            <div className="flex items-center justify-between pt-2 border-t border-white/5">
+                                <div className="flex flex-col">
+                                    <span className="text-xs text-white/80">{t('thunder')}</span>
+                                    <span className="text-[10px] text-white/40">{t('thunderDesc')}</span>
+                                </div>
+                                <input
+                                    type="checkbox"
+                                    checked={config.thunder || false}
+                                    onChange={(e) => handleConfigChange('thunder', e.target.checked)}
+                                    className="w-5 h-5 rounded border-gray-600 text-blue-500 bg-white/10 focus:ring-blue-500 focus:ring-offset-slate-900"
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* SANDSTORM */}
+                    {weather === 'sandstorm' && (
+                        <div className="space-y-5">
+                            <div>
+                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
+                                    <span>{t('sandDensity')}</span>
+                                    <span className="font-mono text-white/50">{((config.sandDensity !== undefined ? config.sandDensity : 0.6) * 100).toFixed(0)}%</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.05"
+                                    value={config.sandDensity !== undefined ? config.sandDensity : 0.6}
+                                    onChange={(e) => handleConfigChange('sandDensity', parseFloat(e.target.value))}
+                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
+                                    <span>{t('wind')}</span>
+                                    <span className="font-mono text-white/50">{config.wind.toFixed(1)}</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="-3.0"
+                                    max="3.0"
+                                    step="0.1"
+                                    value={config.wind}
+                                    onChange={(e) => handleConfigChange('wind', parseFloat(e.target.value))}
+                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                />
+                                <div className="flex justify-between text-[10px] text-white/20 mt-1">
+                                    <span>{t('leftWind')}</span>
+                                    <span>{t('rightWind')}</span>
+                                </div>
                             </div>
                         </div>
                     )}

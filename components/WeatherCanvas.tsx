@@ -688,6 +688,578 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
       c.globalAlpha = 1;
     }
 
+    // --- Hail particle system (optimized with pre-rendered textures) ---
+    const MAX_HAIL = 150;
+    const HAIL_VERTS = 6;
+    const hailShapeOffsets = new Float32Array(MAX_HAIL * HAIL_VERTS * 2);
+    const hailRotation = new Float32Array(MAX_HAIL);
+    const hailRotSpeed = new Float32Array(MAX_HAIL);
+
+    // Pre-render hail stone textures at different sizes to avoid per-frame gradient creation
+    const HAIL_TEX_COUNT = 6;
+    const HAIL_TEX_BASE_SIZE = 8; // base diameter in px
+    const hailTextures: HTMLCanvasElement[] = [];
+    for (let t = 0; t < HAIL_TEX_COUNT; t++) {
+      const texSize = HAIL_TEX_BASE_SIZE + t * 3;
+      const tc = document.createElement('canvas');
+      tc.width = texSize * 2 + 4;
+      tc.height = texSize * 2 + 4;
+      const tctx = tc.getContext('2d')!;
+      const cx = tc.width / 2, cy = tc.height / 2;
+      // Irregular polygon shape
+      tctx.beginPath();
+      for (let v = 0; v < HAIL_VERTS; v++) {
+        const angle = (v / HAIL_VERTS) * Math.PI * 2;
+        const r = texSize * (0.7 + Math.random() * 0.3);
+        const px = cx + Math.cos(angle) * r;
+        const py = cy + Math.sin(angle) * r;
+        v === 0 ? tctx.moveTo(px, py) : tctx.lineTo(px, py);
+      }
+      tctx.closePath();
+      // Radial gradient for 3D ice look
+      const grad = tctx.createRadialGradient(cx - texSize * 0.2, cy - texSize * 0.2, texSize * 0.1, cx, cy, texSize);
+      grad.addColorStop(0, 'rgba(240, 248, 255, 0.85)');
+      grad.addColorStop(0.4, 'rgba(200, 220, 245, 0.65)');
+      grad.addColorStop(1, 'rgba(160, 190, 220, 0.35)');
+      tctx.fillStyle = grad;
+      tctx.fill();
+      tctx.strokeStyle = 'rgba(180, 210, 240, 0.3)';
+      tctx.lineWidth = 0.5;
+      tctx.stroke();
+      // Specular highlight
+      tctx.beginPath();
+      tctx.ellipse(cx - texSize * 0.15, cy - texSize * 0.2, texSize * 0.25, texSize * 0.15, -0.3, 0, Math.PI * 2);
+      tctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      tctx.fill();
+      hailTextures.push(tc);
+    }
+    // Map each hail particle to a texture index
+    const hailTexIdx = new Uint8Array(MAX_HAIL);
+
+    function initHailShape(i: number) {
+      hailRotation[i] = Math.random() * Math.PI * 2;
+      hailRotSpeed[i] = (Math.random() - 0.5) * 0.08;
+      hailTexIdx[i] = Math.floor(Math.random() * HAIL_TEX_COUNT);
+    }
+    const hailData = {
+      x: new Float32Array(MAX_HAIL),
+      y: new Float32Array(MAX_HAIL),
+      speed: new Float32Array(MAX_HAIL),
+      size: new Float32Array(MAX_HAIL),
+      count: 0,
+      init(i: number, spreadY = true) {
+        this.x[i] = Math.random() * (width + 200) - 100;
+        this.y[i] = spreadY ? (Math.random() * (height + 300) - 300) : -(Math.random() * 300 + 20);
+        this.speed[i] = Math.random() * 6 + 14;
+        this.size[i] = Math.random() * 5 + 4;
+        initHailShape(i);
+      },
+      setCount(n: number) {
+        const target = Math.min(n, MAX_HAIL);
+        while (this.count < target) { this.init(this.count, true); this.count++; }
+        if (this.count > target) this.count = target;
+      },
+      updateAll(windVal: number, speedMult: number) {
+        for (let i = 0; i < this.count; i++) {
+          this.speed[i] += 0.18;
+          this.y[i] += this.speed[i] * speedMult;
+          this.x[i] += windVal * 0.3;
+          hailRotation[i] += hailRotSpeed[i] * speedMult;
+          if (this.y[i] > groundLevel) {
+            if (hailBounce.count < HAIL_BOUNCE_POOL) {
+              hailBounce.spawn(this.x[i], groundLevel, this.size[i]);
+            }
+            groundIce.spawn(this.x[i], groundLevel, this.size[i]);
+            this.y[i] = -(Math.random() * 300 + 20);
+            this.x[i] = Math.random() * (width + 200) - 100;
+            this.speed[i] = Math.random() * 6 + 14;
+            this.size[i] = Math.random() * 5 + 4;
+            initHailShape(i);
+          }
+        }
+      },
+      drawAll(ctx: CanvasRenderingContext2D) {
+        if (this.count === 0) return;
+        // Hail stones — draw pre-rendered textures (no per-frame gradient)
+        for (let i = 0; i < this.count; i++) {
+          const tex = hailTextures[hailTexIdx[i]];
+          const sz = this.size[i];
+          const scale = sz / (HAIL_TEX_BASE_SIZE + hailTexIdx[i] * 3);
+          const hw = tex.width * scale * 0.5;
+          const hh = tex.height * scale * 0.5;
+          ctx.save();
+          ctx.translate(this.x[i], this.y[i]);
+          ctx.rotate(hailRotation[i]);
+          ctx.drawImage(tex, -hw, -hh, hw * 2, hh * 2);
+          ctx.restore();
+        }
+      },
+      clear() { this.count = 0; }
+    };
+
+    // Hail bounce fragments (short-lived airborne shards) — batched drawing
+    const HAIL_BOUNCE_POOL = 120;
+    const hailBounce = {
+      x: new Float32Array(HAIL_BOUNCE_POOL),
+      y: new Float32Array(HAIL_BOUNCE_POOL),
+      vx: new Float32Array(HAIL_BOUNCE_POOL),
+      vy: new Float32Array(HAIL_BOUNCE_POOL),
+      life: new Float32Array(HAIL_BOUNCE_POOL),
+      size: new Float32Array(HAIL_BOUNCE_POOL),
+      count: 0,
+      spawn(sx: number, sy: number, parentSize: number) {
+        const n = Math.floor(Math.random() * 3) + 2;
+        for (let f = 0; f < n; f++) {
+          if (this.count >= HAIL_BOUNCE_POOL) return;
+          const i = this.count++;
+          this.x[i] = sx + (Math.random() - 0.5) * parentSize;
+          this.y[i] = sy;
+          this.vx[i] = (Math.random() - 0.5) * 8;
+          this.vy[i] = -(Math.random() * 6 + 3);
+          this.life[i] = 1.0;
+          this.size[i] = parentSize * (Math.random() * 0.35 + 0.15);
+        }
+      },
+      update() {
+        let i = 0;
+        while (i < this.count) {
+          this.vy[i] += 0.3;
+          this.x[i] += this.vx[i];
+          this.y[i] += this.vy[i];
+          this.life[i] -= 0.04;
+          if (this.life[i] <= 0 || this.y[i] > groundLevel + 10) {
+            const last = this.count - 1;
+            if (i < last) {
+              this.x[i] = this.x[last]; this.y[i] = this.y[last];
+              this.vx[i] = this.vx[last]; this.vy[i] = this.vy[last];
+              this.life[i] = this.life[last]; this.size[i] = this.size[last];
+            }
+            this.count--;
+          } else { i++; }
+        }
+      },
+      draw(ctx: CanvasRenderingContext2D) {
+        if (this.count === 0) return;
+        // Batch by alpha ranges to reduce fillStyle changes
+        ctx.fillStyle = 'rgba(210, 230, 255, 0.4)';
+        ctx.beginPath();
+        for (let i = 0; i < this.count; i++) {
+          const sz = this.size[i] * (0.5 + this.life[i] * 0.5);
+          ctx.moveTo(this.x[i], this.y[i] - sz);
+          ctx.lineTo(this.x[i] + sz * 0.7, this.y[i] + sz * 0.3);
+          ctx.lineTo(this.x[i] - sz * 0.5, this.y[i] + sz * 0.6);
+          ctx.closePath();
+        }
+        ctx.fill();
+      },
+      clear() { this.count = 0; }
+    };
+
+    // Pre-render ground ice chunk textures (3 shape types x 3 size variants)
+    const ICE_TEX_SHAPES = 3;
+    const ICE_TEX_SIZES = 3;
+    const ICE_TEX_BASE = 6;
+    const iceTextures: HTMLCanvasElement[] = [];
+    for (let shape = 0; shape < ICE_TEX_SHAPES; shape++) {
+      for (let sizeIdx = 0; sizeIdx < ICE_TEX_SIZES; sizeIdx++) {
+        const sz = ICE_TEX_BASE + sizeIdx * 3;
+        const tc = document.createElement('canvas');
+        tc.width = sz * 2 + 4;
+        tc.height = sz * 2 + 4;
+        const tctx = tc.getContext('2d')!;
+        const cx = tc.width / 2, cy = tc.height / 2;
+        const grad = tctx.createRadialGradient(cx - sz * 0.1, cy - sz * 0.1, 0, cx, cy, sz);
+        grad.addColorStop(0, 'rgba(230, 245, 255, 0.75)');
+        grad.addColorStop(0.6, 'rgba(195, 220, 245, 0.55)');
+        grad.addColorStop(1, 'rgba(170, 200, 230, 0.25)');
+        tctx.fillStyle = grad;
+        tctx.beginPath();
+        if (shape === 0) {
+          tctx.moveTo(cx, cy - sz);
+          tctx.lineTo(cx + sz * 0.8, cy - sz * 0.2);
+          tctx.lineTo(cx + sz * 0.5, cy + sz * 0.7);
+          tctx.lineTo(cx - sz * 0.6, cy + sz * 0.5);
+          tctx.lineTo(cx - sz * 0.7, cy - sz * 0.3);
+        } else if (shape === 1) {
+          tctx.ellipse(cx, cy, sz * 0.9, sz * 0.6, 0, 0, Math.PI * 2);
+        } else {
+          tctx.moveTo(cx, cy - sz * 0.8);
+          tctx.lineTo(cx + sz * 0.9, cy + sz * 0.5);
+          tctx.lineTo(cx - sz * 0.7, cy + sz * 0.6);
+        }
+        tctx.closePath();
+        tctx.fill();
+        tctx.strokeStyle = 'rgba(200, 225, 250, 0.2)';
+        tctx.lineWidth = 0.5;
+        tctx.stroke();
+        // Specular highlight
+        tctx.beginPath();
+        tctx.ellipse(cx - sz * 0.15, cy - sz * 0.15, sz * 0.2, sz * 0.12, -0.5, 0, Math.PI * 2);
+        tctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+        tctx.fill();
+        iceTextures.push(tc);
+      }
+    }
+
+    // Ground ice chunks — persist on ground and melt slowly (optimized with pre-rendered textures)
+    const GROUND_ICE_POOL = 500;
+    const groundIce = {
+      x: new Float32Array(GROUND_ICE_POOL),
+      y: new Float32Array(GROUND_ICE_POOL),
+      size: new Float32Array(GROUND_ICE_POOL),
+      life: new Float32Array(GROUND_ICE_POOL),
+      rotation: new Float32Array(GROUND_ICE_POOL),
+      texIdx: new Uint8Array(GROUND_ICE_POOL), // index into iceTextures
+      count: 0,
+      spawn(sx: number, sy: number, parentSize: number) {
+        const n = Math.floor(Math.random() * 3) + 2;
+        for (let f = 0; f < n; f++) {
+          const shape = Math.floor(Math.random() * ICE_TEX_SHAPES);
+          const sizeVariant = Math.floor(Math.random() * ICE_TEX_SIZES);
+          const tIdx = shape * ICE_TEX_SIZES + sizeVariant;
+          if (this.count >= GROUND_ICE_POOL) {
+            let minLife = 2, minIdx = 0;
+            for (let j = 0; j < this.count; j++) {
+              if (this.life[j] < minLife) { minLife = this.life[j]; minIdx = j; }
+            }
+            const i = minIdx;
+            this.x[i] = sx + (Math.random() - 0.5) * parentSize * 3;
+            this.y[i] = sy - Math.random() * 3;
+            this.size[i] = parentSize * (Math.random() * 0.5 + 0.4);
+            this.life[i] = 1.0;
+            this.rotation[i] = Math.random() * Math.PI * 2;
+            this.texIdx[i] = tIdx;
+          } else {
+            const i = this.count++;
+            this.x[i] = sx + (Math.random() - 0.5) * parentSize * 3;
+            this.y[i] = sy - Math.random() * 3;
+            this.size[i] = parentSize * (Math.random() * 0.5 + 0.4);
+            this.life[i] = 1.0;
+            this.rotation[i] = Math.random() * Math.PI * 2;
+            this.texIdx[i] = tIdx;
+          }
+        }
+      },
+      update(rainAmount: number) {
+        const baseMelt = 0.0002;
+        const rainMelt = rainAmount * 0.0002;
+        const meltRate = baseMelt + rainMelt;
+        let i = 0;
+        while (i < this.count) {
+          this.life[i] -= meltRate;
+          if (this.life[i] <= 0) {
+            const last = this.count - 1;
+            if (i < last) {
+              this.x[i] = this.x[last]; this.y[i] = this.y[last];
+              this.size[i] = this.size[last]; this.life[i] = this.life[last];
+              this.rotation[i] = this.rotation[last]; this.texIdx[i] = this.texIdx[last];
+            }
+            this.count--;
+          } else { i++; }
+        }
+      },
+      draw(ctx: CanvasRenderingContext2D) {
+        if (this.count === 0) return;
+        for (let i = 0; i < this.count; i++) {
+          const tex = iceTextures[this.texIdx[i]];
+          const sz = this.size[i] * (0.6 + this.life[i] * 0.4);
+          const scale = sz / (ICE_TEX_BASE + (this.texIdx[i] % ICE_TEX_SIZES) * 3);
+          const alpha = Math.min(this.life[i] * 0.8, 0.65);
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.translate(this.x[i], this.y[i]);
+          ctx.rotate(this.rotation[i]);
+          const hw = tex.width * scale * 0.5;
+          const hh = tex.height * scale * 0.5;
+          ctx.drawImage(tex, -hw, -hh, hw * 2, hh * 2);
+          ctx.restore();
+        }
+      },
+      clear() { this.count = 0; }
+    };
+
+    // --- Sandstorm particle system ---
+    // Three layers: sand grains (irregular polygons) + debris (tumbling objects) + dust haze
+
+    // Pre-generate reusable irregular grain shapes (polygon vertex offsets)
+    const GRAIN_SHAPES = 12;
+    const grainVertices: number[][][] = [];
+    for (let s = 0; s < GRAIN_SHAPES; s++) {
+      const sides = 3 + Math.floor(Math.random() * 4); // 3-6 sided
+      const verts: number[][] = [];
+      for (let v = 0; v < sides; v++) {
+        const angle = (v / sides) * Math.PI * 2 + (Math.random() - 0.5) * 0.6;
+        const dist = 0.5 + Math.random() * 0.5; // irregular radius 0.5-1.0
+        verts.push([Math.cos(angle) * dist, Math.sin(angle) * dist]);
+      }
+      grainVertices.push(verts);
+    }
+
+    // Sand grain particles
+    const MAX_SAND = 350;
+    const sandData = {
+      x: new Float32Array(MAX_SAND),
+      y: new Float32Array(MAX_SAND),
+      speed: new Float32Array(MAX_SAND),
+      size: new Float32Array(MAX_SAND),
+      opacity: new Float32Array(MAX_SAND),
+      wobble: new Float32Array(MAX_SAND),
+      wobbleAmp: new Float32Array(MAX_SAND),
+      rotation: new Float32Array(MAX_SAND),
+      rotSpeed: new Float32Array(MAX_SAND),
+      shapeIdx: new Uint8Array(MAX_SAND),
+      colorShift: new Float32Array(MAX_SAND), // hue/brightness variation
+      count: 0,
+      init(i: number) {
+        this.x[i] = Math.random() * (width + 400) - 200;
+        this.y[i] = Math.random() * height;
+        this.speed[i] = Math.random() * 5 + 2;
+        this.size[i] = Math.random() * 2.5 + 1;
+        this.opacity[i] = Math.random() * 0.4 + 0.15;
+        this.wobble[i] = Math.random() * Math.PI * 2;
+        this.wobbleAmp[i] = Math.random() * 0.8 + 0.2;
+        this.rotation[i] = Math.random() * Math.PI * 2;
+        this.rotSpeed[i] = (Math.random() - 0.5) * 0.08;
+        this.shapeIdx[i] = Math.floor(Math.random() * GRAIN_SHAPES);
+        this.colorShift[i] = Math.random(); // 0-1 for color interpolation
+      },
+      setCount(n: number) {
+        const target = Math.min(n, MAX_SAND);
+        while (this.count < target) { this.init(this.count); this.count++; }
+        if (this.count > target) this.count = target;
+      },
+      updateAll(windVal: number, speedMult: number, now: number) {
+        const dir = windVal >= 0 ? 1 : -1;
+        const absWind = Math.abs(windVal);
+        for (let i = 0; i < this.count; i++) {
+          this.x[i] += (this.speed[i] + absWind * 2) * speedMult * dir;
+          this.y[i] += Math.sin(now * 0.0006 + this.wobble[i]) * this.wobbleAmp[i];
+          this.rotation[i] += this.rotSpeed[i] * speedMult;
+          if ((dir > 0 && this.x[i] > width + 100) || (dir < 0 && this.x[i] < -100)) {
+            this.x[i] = dir > 0 ? -50 - Math.random() * 200 : width + 50 + Math.random() * 200;
+            this.y[i] = Math.random() * height;
+            this.speed[i] = Math.random() * 5 + 2;
+          }
+          if (this.y[i] < -10) this.y[i] = height + 5;
+          if (this.y[i] > height + 10) this.y[i] = -5;
+        }
+      },
+      drawAll(ctx: CanvasRenderingContext2D) {
+        if (this.count === 0) return;
+        // 3 color tones for sand grains
+        const colors = [
+          [180, 155, 100], // warm sand
+          [160, 135, 85],  // dark sand
+          [195, 170, 120], // light sand
+        ];
+        for (let c = 0; c < 3; c++) {
+          const [r, g, b] = colors[c];
+          ctx.save();
+          for (let i = 0; i < this.count; i++) {
+            // Distribute particles across color tones
+            if (Math.floor(this.colorShift[i] * 3) !== c) continue;
+            const sz = this.size[i];
+            const verts = grainVertices[this.shapeIdx[i]];
+            ctx.globalAlpha = this.opacity[i];
+            ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+            ctx.save();
+            ctx.translate(this.x[i], this.y[i]);
+            ctx.rotate(this.rotation[i]);
+            ctx.beginPath();
+            ctx.moveTo(verts[0][0] * sz, verts[0][1] * sz);
+            for (let v = 1; v < verts.length; v++) {
+              ctx.lineTo(verts[v][0] * sz, verts[v][1] * sz);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+          }
+          ctx.restore();
+        }
+      },
+      clear() { this.count = 0; }
+    };
+
+    // --- Debris / irregular flying objects ---
+    // Types: 0=twig, 1=leaf-like, 2=small rock, 3=scrap/plastic, 4=clump
+    const MAX_DEBRIS = 25;
+    const debrisData = {
+      x: new Float32Array(MAX_DEBRIS),
+      y: new Float32Array(MAX_DEBRIS),
+      speed: new Float32Array(MAX_DEBRIS),
+      size: new Float32Array(MAX_DEBRIS),
+      rotation: new Float32Array(MAX_DEBRIS),
+      rotSpeed: new Float32Array(MAX_DEBRIS),
+      wobble: new Float32Array(MAX_DEBRIS),
+      wobbleAmp: new Float32Array(MAX_DEBRIS),
+      type: new Uint8Array(MAX_DEBRIS),
+      opacity: new Float32Array(MAX_DEBRIS),
+      count: 0,
+      init(i: number) {
+        this.x[i] = Math.random() * (width + 600) - 300;
+        this.y[i] = Math.random() * height;
+        this.speed[i] = Math.random() * 3 + 3;
+        this.size[i] = Math.random() * 8 + 4;
+        this.rotation[i] = Math.random() * Math.PI * 2;
+        this.rotSpeed[i] = (Math.random() - 0.5) * 0.15;
+        this.wobble[i] = Math.random() * Math.PI * 2;
+        this.wobbleAmp[i] = Math.random() * 2 + 1;
+        this.type[i] = Math.floor(Math.random() * 5);
+        this.opacity[i] = Math.random() * 0.3 + 0.2;
+      },
+      setCount(n: number) {
+        const target = Math.min(n, MAX_DEBRIS);
+        while (this.count < target) { this.init(this.count); this.count++; }
+        if (this.count > target) this.count = target;
+      },
+      updateAll(windVal: number, speedMult: number, now: number) {
+        const dir = windVal >= 0 ? 1 : -1;
+        const absWind = Math.abs(windVal);
+        for (let i = 0; i < this.count; i++) {
+          this.x[i] += (this.speed[i] + absWind * 1.5) * speedMult * dir;
+          this.y[i] += Math.sin(now * 0.0004 + this.wobble[i]) * this.wobbleAmp[i];
+          this.rotation[i] += this.rotSpeed[i] * speedMult;
+          if ((dir > 0 && this.x[i] > width + 150) || (dir < 0 && this.x[i] < -150)) {
+            this.x[i] = dir > 0 ? -80 - Math.random() * 300 : width + 80 + Math.random() * 300;
+            this.y[i] = Math.random() * height;
+            this.speed[i] = Math.random() * 3 + 3;
+            this.type[i] = Math.floor(Math.random() * 5);
+          }
+          if (this.y[i] < -30) this.y[i] = height + 20;
+          if (this.y[i] > height + 30) this.y[i] = -20;
+        }
+      },
+      drawAll(ctx: CanvasRenderingContext2D) {
+        for (let i = 0; i < this.count; i++) {
+          const sz = this.size[i];
+          ctx.save();
+          ctx.globalAlpha = this.opacity[i];
+          ctx.translate(this.x[i], this.y[i]);
+          ctx.rotate(this.rotation[i]);
+
+          const t = this.type[i];
+          if (t === 0) {
+            // Twig — thin elongated line with branches
+            ctx.strokeStyle = 'rgb(100, 75, 40)';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(-sz * 1.5, 0);
+            ctx.lineTo(sz * 1.5, 0);
+            ctx.moveTo(sz * 0.3, 0);
+            ctx.lineTo(sz * 0.8, -sz * 0.5);
+            ctx.moveTo(-sz * 0.4, 0);
+            ctx.lineTo(-sz * 0.7, sz * 0.4);
+            ctx.stroke();
+          } else if (t === 1) {
+            // Leaf — curved irregular shape
+            ctx.fillStyle = 'rgb(130, 110, 60)';
+            ctx.beginPath();
+            ctx.moveTo(0, -sz * 0.6);
+            ctx.quadraticCurveTo(sz * 0.8, -sz * 0.2, sz * 0.3, sz * 0.5);
+            ctx.quadraticCurveTo(0, sz * 0.3, -sz * 0.3, sz * 0.5);
+            ctx.quadraticCurveTo(-sz * 0.8, -sz * 0.2, 0, -sz * 0.6);
+            ctx.fill();
+            // Leaf vein
+            ctx.strokeStyle = 'rgb(100, 85, 45)';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(0, -sz * 0.5);
+            ctx.lineTo(0, sz * 0.4);
+            ctx.stroke();
+          } else if (t === 2) {
+            // Small rock — irregular dark polygon
+            ctx.fillStyle = 'rgb(120, 100, 75)';
+            ctx.beginPath();
+            ctx.moveTo(-sz * 0.3, -sz * 0.4);
+            ctx.lineTo(sz * 0.4, -sz * 0.3);
+            ctx.lineTo(sz * 0.5, sz * 0.2);
+            ctx.lineTo(sz * 0.1, sz * 0.4);
+            ctx.lineTo(-sz * 0.4, sz * 0.3);
+            ctx.lineTo(-sz * 0.5, -sz * 0.1);
+            ctx.closePath();
+            ctx.fill();
+          } else if (t === 3) {
+            // Scrap / plastic bag — thin fluttery shape
+            ctx.fillStyle = 'rgba(170, 160, 140, 0.6)';
+            ctx.beginPath();
+            const flutter = Math.sin(this.rotation[i] * 3) * sz * 0.2;
+            ctx.moveTo(-sz * 0.6, -sz * 0.3 + flutter);
+            ctx.lineTo(sz * 0.5, -sz * 0.4);
+            ctx.quadraticCurveTo(sz * 0.7, 0, sz * 0.4, sz * 0.3);
+            ctx.lineTo(-sz * 0.5, sz * 0.2 - flutter);
+            ctx.closePath();
+            ctx.fill();
+          } else {
+            // Dirt clump — cluster of small irregular blobs
+            ctx.fillStyle = 'rgb(140, 115, 75)';
+            ctx.beginPath();
+            ctx.arc(0, 0, sz * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(sz * 0.25, sz * 0.15, sz * 0.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(-sz * 0.2, -sz * 0.1, sz * 0.18, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          ctx.restore();
+        }
+      },
+      clear() { this.count = 0; }
+    };
+
+    // Ground-level rolling sand
+    const GROUND_SAND_POOL = 60;
+    const groundSand = {
+      x: new Float32Array(GROUND_SAND_POOL),
+      y: new Float32Array(GROUND_SAND_POOL),
+      vx: new Float32Array(GROUND_SAND_POOL),
+      size: new Float32Array(GROUND_SAND_POOL),
+      life: new Float32Array(GROUND_SAND_POOL),
+      count: 0,
+      spawn(windVal: number) {
+        if (this.count >= GROUND_SAND_POOL) return;
+        const i = this.count++;
+        this.x[i] = Math.random() * width;
+        this.y[i] = groundLevel - Math.random() * 10;
+        this.vx[i] = (windVal >= 0 ? 1 : -1) * (Math.random() * 3 + 1);
+        this.size[i] = Math.random() * 8 + 4;
+        this.life[i] = 1.0;
+      },
+      update() {
+        let i = 0;
+        while (i < this.count) {
+          this.x[i] += this.vx[i];
+          this.y[i] -= 0.2;
+          this.life[i] -= 0.02;
+          if (this.life[i] <= 0) {
+            const last = this.count - 1;
+            if (i < last) {
+              this.x[i] = this.x[last]; this.y[i] = this.y[last];
+              this.vx[i] = this.vx[last]; this.size[i] = this.size[last];
+              this.life[i] = this.life[last];
+            }
+            this.count--;
+          } else { i++; }
+        }
+      },
+      draw(ctx: CanvasRenderingContext2D) {
+        if (this.count === 0) return;
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = 'rgb(160, 130, 80)';
+        ctx.beginPath();
+        for (let i = 0; i < this.count; i++) {
+          const r = this.size[i] * this.life[i];
+          ctx.moveTo(this.x[i] + r, this.y[i]);
+          ctx.arc(this.x[i], this.y[i], r, 0, Math.PI * 2);
+        }
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      },
+      clear() { this.count = 0; }
+    };
+
     // --- Initialize collections ---
     let snows: SnowFlake[] = [];
     let sunEffect: SunEffect | null = null;
@@ -711,6 +1283,12 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
       // Reset all particle systems
       rainData.clear();
       splashPool.clear();
+      hailData.clear();
+      hailBounce.clear();
+      groundIce.clear();
+      sandData.clear();
+      debrisData.clear();
+      groundSand.clear();
       snows = [];
       snowPile = null;
       sunEffect = null;
@@ -719,7 +1297,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
       flashOpacity = 0;
       lightningCount = 0;
 
-      const { particleCount } = configRef.current;
+      const { particleCount, hailCount = 30 } = configRef.current;
 
       if (weather === 'rainy') {
         rainData.setCount(particleCount);
@@ -736,6 +1314,13 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
         for(let i=0; i<fogCount; i++) {
              fogs.push(new FogPuff(width, height));
         }
+      } else if (weather === 'hail') {
+        rainData.setCount(Math.min(particleCount, 30));
+        hailData.setCount(hailCount);
+        nextLightningAt = performance.now() + getNextLightningDelayMs();
+      } else if (weather === 'sandstorm') {
+        sandData.setCount(Math.floor(particleCount * 1.5));
+        debrisData.setCount(Math.min(Math.floor(particleCount * 0.12), MAX_DEBRIS));
       }
     };
 
@@ -929,6 +1514,119 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
           
           updateFogs(fogs, width, height, now, windVal);
           drawFogs(ctx, fogs, fogDensity);
+      }
+
+      // HAIL
+      else if (weather === 'hail') {
+        const { particleCount, hailCount = 30, thunder, wind: windVal, speed: speedMult } = configRef.current;
+
+        // Thunder logic (same as rain)
+        if (thunder) {
+          if (thunderTriggerOnceRef.current) {
+            flashOpacity = 0.6 + Math.random() * 0.4;
+            lightnings.push(new Lightning(width, height));
+            nextLightningAt = now + getNextLightningDelayMs();
+            onLightningStrikeRef.current?.();
+            thunderTriggerOnceRef.current = false;
+          }
+          if (now >= nextLightningAt) {
+            flashOpacity = 0.6 + Math.random() * 0.4;
+            lightnings.push(new Lightning(width, height));
+            nextLightningAt = now + getNextLightningDelayMs();
+            onLightningStrikeRef.current?.();
+          }
+        } else {
+          thunderTriggerOnceRef.current = false;
+        }
+
+        for (let i = lightnings.length - 1; i >= 0; i--) {
+          const l = lightnings[i];
+          l.update(); l.draw(ctx);
+          if (l.life <= 0) lightnings.splice(i, 1);
+        }
+
+        // Background rain layer — rendered FIRST (behind everything)
+        // Rain is lighter/slower, clearly separated from heavier/faster hail
+        const rainCount = Math.max(0, Math.min(30, particleCount));
+        if (rainCount > 0) {
+          rainData.setCount(rainCount);
+          rainData.updateAll(windVal, speedMult * 0.6);
+          rainData.drawAll(ctx, windVal);
+          splashPool.update();
+          splashPool.draw(ctx);
+        } else {
+          rainData.setCount(0);
+        }
+
+        // Ground ice chunks — update with rain-dependent melt rate
+        groundIce.update(rainCount);
+        groundIce.draw(ctx);
+
+        // Hail pellets — heavy, fast, rendered ON TOP of rain
+        hailData.setCount(Math.min(hailCount, MAX_HAIL));
+        hailData.updateAll(windVal, speedMult);
+        hailData.drawAll(ctx);
+
+        // Bounce fragments
+        hailBounce.update();
+        hailBounce.draw(ctx);
+      }
+
+      // SANDSTORM
+      else if (weather === 'sandstorm') {
+        const { particleCount, sandDensity = 0.6, wind: windVal } = configRef.current;
+
+        // Sand tint overlay
+        const tintAlpha = sandDensity * 0.25;
+        if (tintAlpha > 0.01) {
+          ctx.fillStyle = `rgba(180, 140, 70, ${tintAlpha})`;
+          ctx.fillRect(0, 0, width, height);
+        }
+
+        // Sand grain particles — speed driven by wind
+        sandData.setCount(Math.floor(particleCount * 1.5));
+        sandData.updateAll(windVal, 1, now);
+        sandData.drawAll(ctx);
+
+        // Flying debris (twigs, leaves, rocks, scraps)
+        debrisData.setCount(Math.min(Math.floor(particleCount * 0.12), MAX_DEBRIS));
+        debrisData.updateAll(windVal, 1, now);
+        debrisData.drawAll(ctx);
+
+        // Ground rolling sand
+        if (Math.random() < 0.05) {
+          groundSand.spawn(windVal);
+        }
+        groundSand.update();
+        groundSand.draw(ctx);
+
+        // Top/bottom dust gradient bands at 30%-100% density
+        if (sandDensity >= 0.3) {
+          const bandStrength = (sandDensity - 0.3) / 0.7; // 0 at 30%, 1 at 100%
+          const bandAlpha = 0.12 + bandStrength * 0.35; // 0.12-0.47 max opacity
+
+          // Top band — extends further with very gentle fade
+          const topH = 80 + bandStrength * 120; // 80-200px
+          const topGrad = ctx.createLinearGradient(0, 0, 0, topH);
+          topGrad.addColorStop(0, `rgba(120, 90, 40, ${bandAlpha})`);
+          topGrad.addColorStop(0.2, `rgba(130, 100, 48, ${bandAlpha * 0.7})`);
+          topGrad.addColorStop(0.5, `rgba(140, 110, 55, ${bandAlpha * 0.3})`);
+          topGrad.addColorStop(0.8, `rgba(145, 115, 60, ${bandAlpha * 0.08})`);
+          topGrad.addColorStop(1, 'rgba(145, 115, 60, 0)');
+          ctx.fillStyle = topGrad;
+          ctx.fillRect(0, 0, width, topH);
+
+          // Bottom band — extends further with very gentle fade
+          const botH = 80 + bandStrength * 120;
+          const bottomGrad = ctx.createLinearGradient(0, height - botH, 0, height);
+          bottomGrad.addColorStop(0, 'rgba(155, 120, 55, 0)');
+          bottomGrad.addColorStop(0.2, `rgba(155, 120, 55, ${bandAlpha * 0.08})`);
+          bottomGrad.addColorStop(0.5, `rgba(150, 115, 50, ${bandAlpha * 0.3})`);
+          bottomGrad.addColorStop(0.8, `rgba(145, 108, 42, ${bandAlpha * 0.7})`);
+          bottomGrad.addColorStop(1, `rgba(140, 100, 35, ${bandAlpha})`);
+          ctx.fillStyle = bottomGrad;
+          ctx.fillRect(0, height - botH, width, botH);
+        }
       }
 
 

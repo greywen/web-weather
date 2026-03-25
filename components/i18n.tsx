@@ -46,6 +46,10 @@ const translations = {
     cloudy: 'Cloudy',
     foggy: 'Foggy',
     icy: 'Icy',
+    hail: 'Hail',
+    sandstorm: 'Sandstorm',
+    hailCount: 'Hail Amount',
+    sandDensity: 'Sand Density',
 
     // Global Settings
     globalSettings: 'Global Settings',
@@ -128,6 +132,10 @@ const translations = {
     cloudy: '多云',
     foggy: '雾天',
     icy: '冰冻',
+    hail: '冰雹',
+    sandstorm: '沙尘暴',
+    hailCount: '冰雹量',
+    sandDensity: '沙尘浓度',
 
     // Global Settings
     globalSettings: '全局设置',
