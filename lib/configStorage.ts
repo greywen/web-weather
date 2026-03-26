@@ -6,6 +6,8 @@ export const CONFIG_STORAGE_KEYS = {
   temperatureUnit: 'web-weather-temp-unit',
   mapLocation: 'web-weather-map-location',
   autoMode: 'web-weather-auto-mode',
+  paramsOpen: 'web-weather-params-open',
+  forecastOpen: 'web-weather-forecast-open',
 } as const;
 
 export type ConfigStorageKey = (typeof CONFIG_STORAGE_KEYS)[keyof typeof CONFIG_STORAGE_KEYS];

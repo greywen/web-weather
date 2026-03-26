@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import { CalendarDays, ChevronDown, ChevronUp } from 'lucide-react';
 import { useWeather } from './WeatherProvider';
 import { useI18n, TranslationKey, formatTemp } from './i18n';
 import { HourlyForecast, DailyForecast, WeatherType } from './weather-types';
@@ -178,19 +179,25 @@ export default function WeatherTimeline({ collapsed, onToggle }: WeatherTimeline
 
     return (
         <div className="space-y-2">
-            <div className="flex items-center justify-between">
-                <button
-                    type="button"
-                    onClick={onToggle}
-                    className="flex items-center gap-1.5 group"
-                >
-                    <span className={`text-[10px] transition-transform ${!collapsed ? 'rotate-90' : ''}`}>▶</span>
-                    <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest group-hover:text-white/60 transition-colors">
+            <button
+                type="button"
+                onClick={onToggle}
+                className="flex items-center justify-between w-full group mb-1"
+            >
+                <div className="flex items-center gap-1.5">
+                    <CalendarDays size={11} className="text-white/30" />
+                    <span className="text-[10px] font-bold text-white/35 uppercase tracking-widest group-hover:text-white/55 transition-colors">
                         {t('weatherForecast')}
-                    </h3>
-                </button>
-                {!collapsed && (
-                    <div className="flex rounded-lg overflow-hidden border border-white/10">
+                    </span>
+                </div>
+                {collapsed
+                    ? <ChevronDown size={12} className="text-white/25" />
+                    : <ChevronUp size={12} className="text-white/25" />}
+            </button>
+
+            {!collapsed && (
+                <div className="space-y-2 mt-3">
+                    <div className="flex rounded-lg overflow-hidden border border-white/10 w-fit ml-auto">
                         <button
                             type="button"
                             onClick={() => setView('24h')}
@@ -214,16 +221,14 @@ export default function WeatherTimeline({ collapsed, onToggle }: WeatherTimeline
                             {t('daily7d')}
                         </button>
                     </div>
-                )}
-            </div>
 
-            {!collapsed && (
-                <div className="rounded-lg border border-white/10 bg-white/5 overflow-hidden p-2">
-                    {view === '24h' ? (
-                        <HourlyTimeline data={forecastData.hourly} />
-                    ) : (
-                        <DailyTimeline data={forecastData.daily} />
-                    )}
+                    <div className="rounded-lg border border-white/10 bg-white/5 overflow-hidden p-2">
+                        {view === '24h' ? (
+                            <HourlyTimeline data={forecastData.hourly} />
+                        ) : (
+                            <DailyTimeline data={forecastData.daily} />
+                        )}
+                    </div>
                 </div>
             )}
         </div>

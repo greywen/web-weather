@@ -48,6 +48,15 @@ body {
   background: rgba(255, 255, 255, 0.3);
 }
 
+/* Hide scrollbar for weather type horizontal scroller */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 .fog-overlay {
   position: fixed;
   inset: 0;

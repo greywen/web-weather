@@ -106,6 +106,7 @@ const translations = {
     searchPlaceholder: 'Search city or place...',
     confirmLocation: 'Confirm',
     clickMapHint: 'Click on map to select location',
+    locateMe: 'Locate Me',
   },
   zh: {
     // Panel
@@ -198,6 +199,7 @@ const translations = {
     searchPlaceholder: '搜索城市或地点...',
     confirmLocation: '确认',
     clickMapHint: '点击地图选择位置',
+    locateMe: '定位当前',
   },
 } as const;
 

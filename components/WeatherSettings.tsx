@@ -1,609 +1,546 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
-import { Github } from 'lucide-react';
+import {
+    Sun, CloudRain, Snowflake, Cloud, CloudFog, CloudHail, Wind,
+    MapPin, Search, Volume2, VolumeX, Maximize2, Minimize2,
+    Clock, Github, X, ChevronDown, ChevronUp,
+    Zap, Droplets, Thermometer, Eye, Globe,
+    LocateFixed, RefreshCw, SlidersHorizontal,
+} from 'lucide-react';
 import { useWeather } from './WeatherProvider';
-import { WeatherType } from './weather-types';
-import { useI18n, TranslationKey } from './i18n';
+import { WeatherType, WeatherConfig } from './weather-types';
+import { useI18n, TranslationKey, formatTemp } from './i18n';
 import WeatherTimeline from './WeatherTimeline';
+import { CONFIG_STORAGE_KEYS, readConfigFromLocalStorage, saveConfigToLocalStorage } from '../lib/configStorage';
 
 const WorldMap = dynamic(() => import('./WorldMap'), { ssr: false });
 
-const weatherEmoji: Record<WeatherType, string> = {
-    sunny: '☀️',
-    rainy: '🌧️',
-    snowy: '❄️',
-    cloudy: '☁️',
-    foggy: '🌫️',
-    icy: '🧊',
-    hail: '🌨️',
-    sandstorm: '🌪️',
+interface NominatimResult {
+    display_name: string;
+    lat: string;
+    lon: string;
+}
+
+const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
+
+// Weather type → Lucide icon
+const weatherIconMap: Record<WeatherType, React.ComponentType<{ size?: number; className?: string }>> = {
+    sunny: Sun,
+    rainy: CloudRain,
+    snowy: Snowflake,
+    cloudy: Cloud,
+    foggy: CloudFog,
+    icy: Snowflake,
+    hail: CloudHail,
+    sandstorm: Wind,
 };
 
+// Per-type accent colours (text)
+const weatherAccent: Record<WeatherType, string> = {
+    sunny: 'text-amber-400',
+    rainy: 'text-blue-400',
+    snowy: 'text-sky-300',
+    cloudy: 'text-slate-300',
+    foggy: 'text-gray-400',
+    icy: 'text-cyan-300',
+    hail: 'text-indigo-300',
+    sandstorm: 'text-orange-400',
+};
+
+// Per-type chip bg / border / shadow for active state
+const weatherChip: Record<WeatherType, string> = {
+    sunny: 'bg-amber-500/20 border-amber-500/30 shadow-amber-500/10',
+    rainy: 'bg-blue-500/20 border-blue-500/30 shadow-blue-500/10',
+    snowy: 'bg-sky-500/20 border-sky-500/30 shadow-sky-500/10',
+    cloudy: 'bg-slate-400/15 border-slate-400/25 shadow-slate-400/10',
+    foggy: 'bg-gray-500/20 border-gray-500/30 shadow-gray-500/10',
+    icy: 'bg-cyan-500/20 border-cyan-500/30 shadow-cyan-500/10',
+    hail: 'bg-indigo-500/20 border-indigo-500/30 shadow-indigo-500/10',
+    sandstorm: 'bg-orange-500/20 border-orange-500/30 shadow-orange-500/10',
+};
+
+const displayTypes: WeatherType[] = ['sunny', 'rainy', 'snowy', 'cloudy', 'foggy', 'hail', 'sandstorm'];
+
+/* ── tiny sub-components ──────────────────────────────────── */
+
+function Slider({ icon, label, value, min, max, step, current, onChange, accent, leftHint, rightHint }: {
+    icon: ReactNode; label: string; value: string;
+    min: number; max: number; step: number; current: number;
+    onChange: (v: number) => void; accent?: string;
+    leftHint?: string; rightHint?: string;
+}) {
+    return (
+        <div>
+            <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5">{icon}<span className="text-[11px] text-white/60">{label}</span></div>
+                <span className="text-[11px] font-mono text-white/40">{value}</span>
+            </div>
+            <input type="range" min={min} max={max} step={step} value={current}
+                onChange={(e) => onChange(parseFloat(e.target.value))}
+                className={`w-full h-1 bg-white/10 rounded-full appearance-none cursor-pointer ${accent ?? 'accent-blue-500'}`} />
+            {(leftHint || rightHint) && (
+                <div className="flex justify-between text-[9px] text-white/20 mt-1">
+                    <span>{leftHint}</span><span>{rightHint}</span>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function Toggle({ checked, onChange, activeColor = 'bg-blue-500/60' }: {
+    checked: boolean; onChange: () => void; activeColor?: string;
+}) {
+    return (
+        <button type="button" onClick={onChange}
+            className={`w-8 h-[18px] rounded-full transition-all relative shrink-0 ${checked ? activeColor : 'bg-white/10'}`}>
+            <span className={`absolute top-[2px] w-[14px] h-[14px] rounded-full transition-all ${checked ? 'left-[16px] bg-white' : 'left-[2px] bg-white/40'}`} />
+        </button>
+    );
+}
+
+function ToolbarBtn({ icon, active, onClick, title, activeClass }: {
+    icon: ReactNode; active?: boolean; onClick: () => void; title: string; activeClass?: string;
+}) {
+    return (
+        <button type="button" onClick={onClick} title={title}
+            className={`p-2 rounded-xl transition-all ${active ? (activeClass ?? 'bg-blue-500/20 text-blue-400') : 'text-white/35 hover:text-white/60 hover:bg-white/[0.06]'}`}>
+            {icon}
+        </button>
+    );
+}
+
+/* ── main component ───────────────────────────────────────── */
+
 export default function WeatherSettings() {
-    const { weather, setWeather, config, setConfig, transition, setTransitionConfig, isAuto, toggleAuto, soundEnabled, setSoundEnabled, immersive, setImmersive, lastUpdated, setLocation, customCoords } = useWeather();
+    const {
+        weather, setWeather, config, setConfig, transition, setTransitionConfig,
+        isAuto, isLocating, toggleAuto, soundEnabled, setSoundEnabled,
+        immersive, setImmersive, lastUpdated, setLocation, customCoords, weatherData,
+    } = useWeather();
     const { t, locale, setLocale, temperatureUnit, setTemperatureUnit } = useI18n();
-    const [mapOpen, setMapOpen] = useState(false);
-    const [isOpen, setIsOpen] = useState(() => {
-        if (typeof window === 'undefined') return true;
-        return window.innerWidth >= 768;
-    });
+
+    const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
     const [menuOpen, setMenuOpen] = useState(false);
-    const [forecastOpen, setForecastOpen] = useState(true);
-    const [weatherTypeOpen, setWeatherTypeOpen] = useState(true);
+    const [mapOpen, setMapOpen] = useState(false);
+    const [searchOpen, setSearchOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<NominatimResult[]>([]);
+    const [searching, setSearching] = useState(false);
+    const [paramsOpen, setParamsOpen] = useState(() => readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.paramsOpen) !== 'off');
+    const [forecastOpen, setForecastOpen] = useState(() => readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.forecastOpen) !== 'off');
 
-    const weatherLabel = (type: WeatherType) => `${weatherEmoji[type]} ${t(type as TranslationKey)}`;
+    const searchRef = useRef<HTMLInputElement>(null);
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const abortRef = useRef<AbortController | null>(null);
 
-    const handleTypeChange = (type: WeatherType) => {
-        setWeather(type);
+    /* location search (debounced, with abort for race-safety) */
+    const handleSearchInput = useCallback((value: string) => {
+        setSearchQuery(value);
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        abortRef.current?.abort();
+        if (!value.trim()) { setSearchResults([]); setSearching(false); return; }
+        debounceRef.current = setTimeout(async () => {
+            const controller = new AbortController();
+            abortRef.current = controller;
+            setSearching(true);
+            try {
+                const res = await fetch(
+                    `${NOMINATIM_BASE}/search?format=json&q=${encodeURIComponent(value)}&limit=5`,
+                    { headers: { 'Accept-Language': locale }, signal: controller.signal },
+                );
+                if (res.ok && !controller.signal.aborted) setSearchResults(await res.json());
+            } catch { /* network error or aborted – ignore */ }
+            if (!controller.signal.aborted) setSearching(false);
+        }, 400);
+    }, [locale]);
+
+    /* cleanup debounce + inflight request on unmount */
+    useEffect(() => () => {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        abortRef.current?.abort();
+    }, []);
+
+    const selectResult = (r: NominatimResult) => {
+        setLocation(parseFloat(r.lat), parseFloat(r.lon));
+        setSearchQuery('');
+        setSearchResults([]);
+        setSearchOpen(false);
     };
 
-    const handleConfigChange = (key: keyof typeof config, value: number | boolean) => {
-        setConfig({ [key]: value });
-    };
+    /* helpers */
+    const set = (key: keyof WeatherConfig, v: number | boolean) => setConfig({ [key]: v });
+    const panelVisible = immersive ? menuOpen : isOpen;
+    const WeatherIcon = weatherIconMap[weather];
+    const locName = weatherData?.locationName
+        || (customCoords ? `${customCoords.lat.toFixed(2)}, ${customCoords.lon.toFixed(2)}` : '');
+    const temp = weatherData?.temperature;
+    const feelsLike = weatherData?.apparentTemperature;
 
     return (
         <>
-            {/* Weather status badge: click to open panel (both modes) */}
-            {(immersive ? !menuOpen : !isOpen) && (
-                <button
-                    type="button"
+            {/* ── Collapsed badge ──────────────────────────────── */}
+            {!panelVisible && (
+                <button type="button"
                     onClick={() => immersive ? setMenuOpen(true) : setIsOpen(true)}
-                    className="fixed top-4 left-4 z-[70] flex items-center gap-2 rounded-lg bg-slate-900/70 backdrop-blur-sm text-white text-xs px-3 py-2 border border-white/10 hover:bg-slate-900/90 transition-all cursor-pointer"
+                    className="fixed top-4 left-4 z-[70] flex items-center gap-2.5 rounded-2xl bg-slate-900/80 backdrop-blur-xl text-white pl-3 pr-4 py-2.5 border border-white/[0.08] hover:bg-slate-900/95 hover:border-white/[0.15] transition-all cursor-pointer shadow-[0_4px_30px_rgba(0,0,0,0.4)] group"
                 >
-                    <span>{weatherLabel(weather)}</span>
-                    {isAuto ? <span className="text-green-400">{t('auto')}</span> : <span className="text-white/40">{t('manual')}</span>}
+                    <div className={`p-1.5 rounded-lg border ${weatherChip[weather]} shadow-lg`}>
+                        <WeatherIcon size={15} className={weatherAccent[weather]} />
+                    </div>
+                    <span className="text-[13px] font-medium truncate max-w-[140px]">
+                        {locName ? locName.split(',')[0] : t(weather as TranslationKey)}
+                    </span>
+                    {temp != null && (
+                        <>
+                            <span className="text-white/20">·</span>
+                            <span className="text-[13px] text-white/70 font-semibold">{formatTemp(temp, temperatureUnit)}</span>
+                        </>
+                    )}
+                    {isAuto && <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse ml-0.5" />}
                 </button>
             )}
 
-            <div
-                className={`fixed z-[70] transition-all bg-slate-900/85 border border-white/10 rounded-xl shadow-2xl hover:bg-slate-900/90
-                    w-[92vw] max-w-[26rem] left-1/2 -translate-x-1/2 top-16 p-4 md:p-5 md:w-[22rem] md:max-w-[calc(100vw-2rem)] md:left-4 md:translate-x-0 md:top-4
-                    max-h-[70vh] overflow-y-auto overflow-x-hidden settings-scroll
-                    ${(immersive ? menuOpen : isOpen)
-                        ? 'opacity-100 translate-y-0 pointer-events-auto'
-                        : 'opacity-0 -translate-y-2 pointer-events-none'
-                    }
-                `}
-            >
-                <div className="mx-auto w-full max-w-[21rem]">
-                <div className="flex justify-between items-center gap-2 mb-4 md:mb-6">
-                    <h2 className="text-base md:text-lg font-bold text-white tracking-tight flex items-center gap-2 whitespace-nowrap shrink-0">
-                        {t('weatherControl')}
-                    </h2>
-                    <div className="flex items-center gap-1.5 flex-nowrap shrink-0">
-                        <button
-                            type="button"
-                            onClick={() => immersive ? setMenuOpen(false) : setIsOpen(false)}
-                            className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 text-white hover:bg-white/20 hover:scale-110 transition-all border border-white/10"
-                            title={t('closePanel')}
-                        >
-                            ✕
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setTemperatureUnit(temperatureUnit === '°C' ? '°F' : '°C')}
-                            className="flex items-center justify-center h-8 rounded-lg bg-white/10 text-white text-xs font-semibold px-2 whitespace-nowrap shrink-0 hover:bg-white/20 hover:scale-110 transition-all border border-white/10"
-                            title={t('temperatureUnit')}
-                        >
-                            {temperatureUnit}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setLocale(locale === 'en' ? 'zh' : 'en')}
-                            className="flex items-center justify-center h-8 rounded-lg bg-white/10 text-white text-xs font-semibold px-2 whitespace-nowrap shrink-0 hover:bg-white/20 hover:scale-110 transition-all border border-white/10"
-                            title={t('language')}
-                        >
-                            {locale === 'en' ? '中文' : 'EN'}
-                        </button>
-                        <a
-                            href="https://github.com/greywen/web-weather"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 text-white hover:bg-white/20 hover:scale-110 transition-all border border-white/10"
-                            title="GitHub"
-                        >
-                            <Github size={20} />
-                        </a>
-                    </div>
-                </div>
+            {/* ── Main floating panel ─────────────────────────── */}
+            <div className={`fixed z-[70] transition-all duration-300 ease-out
+                w-[92vw] max-w-[24rem] left-1/2 -translate-x-1/2 top-12
+                md:w-[22rem] md:max-w-[calc(100vw-2rem)] md:left-4 md:translate-x-0 md:top-4
+                ${panelVisible
+                    ? 'opacity-100 translate-y-0 pointer-events-auto'
+                    : 'opacity-0 -translate-y-4 pointer-events-none scale-[0.97]'}`}>
 
-            <div className="space-y-6">
-                {/* Quick Controls: Mode + Immersive + Sound */}
-                <div className="rounded-lg border border-white/10 bg-white/5 overflow-hidden">
-                    <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/5">
-                        <div className="flex flex-col">
-                            <span className="text-xs text-white/80">{t('weatherMode')}</span>
-                            <span className="text-[10px] text-white/40">{t('weatherModeDesc')}</span>
+                <div className="bg-slate-900/90 backdrop-blur-2xl border border-white/[0.08] rounded-2xl shadow-[0_8px_60px_rgba(0,0,0,0.5)] overflow-hidden">
+                    <div className="max-h-[80vh] overflow-y-auto overflow-x-hidden settings-scroll">
+
+                        {/* ─── Section: Location header ─────────── */}
+                        <div className="p-4 pb-3">
+                            <div className="flex items-start justify-between gap-2 mb-3">
+                                <div className="flex items-start gap-3 min-w-0 flex-1">
+                                    <div className={`p-2.5 rounded-xl border ${weatherChip[weather]} shadow-lg mt-0.5 shrink-0`}>
+                                        <WeatherIcon size={22} className={weatherAccent[weather]} />
+                                    </div>
+                                    <div className="min-w-0 pt-0.5">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <h2 className="text-sm font-semibold text-white truncate max-w-[160px]">
+                                                {locName ? locName.split(',')[0] : t(weather as TranslationKey)}
+                                            </h2>
+                                            {isAuto && (
+                                                <span className="text-[8px] font-bold text-green-400 bg-green-500/15 px-1.5 py-0.5 rounded-full border border-green-500/20 uppercase tracking-widest shrink-0">
+                                                    {t('auto')}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {locName.includes(',') && (
+                                            <p className="text-[11px] text-white/35 truncate mt-0.5">
+                                                {locName.split(',').slice(1).join(',').trim()}
+                                            </p>
+                                        )}
+                                        <div className="flex items-center gap-2 mt-1.5">
+                                            {temp != null && (
+                                                <span className="text-xl font-bold text-white leading-none">{formatTemp(temp, temperatureUnit)}</span>
+                                            )}
+                                            <span className={`text-xs font-medium ${weatherAccent[weather]}`}>{t(weather as TranslationKey)}</span>
+                                            {feelsLike != null && temp != null && (
+                                                <span className="text-[10px] text-white/25">{t('feelsLike')} {formatTemp(feelsLike, temperatureUnit)}</span>
+                                            )}
+                                        </div>
+                                        {isAuto && lastUpdated && (
+                                            <span className="text-[9px] text-white/20 mt-1 block">
+                                                {t('lastUpdated')} {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                <button type="button"
+                                    onClick={() => immersive ? setMenuOpen(false) : setIsOpen(false)}
+                                    className="p-1.5 rounded-lg text-white/25 hover:text-white/60 hover:bg-white/5 transition-all shrink-0">
+                                    <X size={16} />
+                                </button>
+                            </div>
+
+                            {/* inline location search */}
+                            <div className="relative">
+                                <div className={`flex items-center gap-2 rounded-xl border transition-all cursor-text
+                                    ${searchOpen
+                                        ? 'bg-white/10 border-white/15'
+                                        : 'bg-white/[0.04] border-white/[0.06] hover:bg-white/[0.07] hover:border-white/10'}`}
+                                    onClick={() => { setSearchOpen(true); searchRef.current?.focus(); }}>
+                                    <div className="pl-3 text-white/25"><Search size={14} /></div>
+                                    <input ref={searchRef} type="text" value={searchQuery}
+                                        onChange={(e) => handleSearchInput(e.target.value)}
+                                        onFocus={() => setSearchOpen(true)}
+                                        onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
+                                        placeholder={t('searchPlaceholder' as TranslationKey)}
+                                        className="flex-1 h-9 bg-transparent text-xs text-white/80 placeholder-white/20 focus:outline-none" />
+                                    {searching && (
+                                        <div className="pr-3"><div className="w-3.5 h-3.5 border-2 border-white/10 border-t-white/40 rounded-full animate-spin" /></div>
+                                    )}
+                                    <button type="button"
+                                        onClick={(e) => { e.stopPropagation(); setMapOpen(true); }}
+                                        className="flex items-center gap-1 px-2.5 py-1.5 mr-1.5 rounded-lg text-[10px] font-medium text-white/35 hover:text-white/70 hover:bg-white/[0.06] transition-all"
+                                        title={t('worldMap' as TranslationKey)}>
+                                        <Globe size={13} />
+                                        <span className="hidden sm:inline">{t('worldMap' as TranslationKey)}</span>
+                                    </button>
+                                </div>
+
+                                {/* search results dropdown */}
+                                {searchOpen && searchResults.length > 0 && (
+                                    <div className="absolute top-full left-0 right-0 mt-1.5 bg-slate-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl overflow-hidden z-10 max-h-[200px] overflow-y-auto">
+                                        {searchResults.map((r, i) => (
+                                            <button key={i} type="button" onClick={() => selectResult(r)}
+                                                className="w-full text-left px-3 py-2.5 text-xs text-white/70 hover:bg-white/[0.06] transition-colors flex items-start gap-2 border-b border-white/[0.04] last:border-b-0">
+                                                <MapPin size={12} className="text-white/25 mt-0.5 shrink-0" />
+                                                <span className="line-clamp-2 leading-snug">{r.display_name}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                            {isAuto && lastUpdated && (
-                                <span className="text-[10px] text-white/30" title={lastUpdated.toLocaleString()}>
-                                    {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                            )}
-                            <button
-                                type="button"
-                                onClick={toggleAuto}
-                                className={`text-xs font-semibold px-2.5 py-1 rounded-full transition-all ${isAuto ? 'bg-green-500/80 text-white' : 'bg-white/10 text-white/60 border border-white/10'}`}
-                            >
-                                {isAuto ? t('auto') : t('manual')}
-                            </button>
+
+                        <div className="h-px bg-white/[0.06] mx-4" />
+
+                        {/* ─── Section: Weather type selector ───── */}
+                        <div className="py-3">
+                            <div className="grid grid-cols-4 gap-1 px-4 sm:grid-cols-7">
+                                {displayTypes.map((wt) => {
+                                    const Icon = weatherIconMap[wt];
+                                    const active = weather === wt;
+                                    return (
+                                        <button key={wt}
+                                            onClick={() => setWeather(wt)}
+                                            title={t(wt as TranslationKey)}
+                                            className={`flex w-full min-w-0 flex-col items-center gap-1 rounded-xl px-1.5 py-2 transition-all
+                                                ${active
+                                                    ? `${weatherChip[wt]} border shadow-lg`
+                                                    : 'border border-transparent hover:bg-white/[0.04] hover:border-white/[0.06]'}`}>
+                                            <Icon size={17} className={active ? weatherAccent[wt] : 'text-white/35'} />
+                                            <span className={`block w-full truncate text-center text-[8px] font-medium leading-none ${active ? 'text-white/90' : 'text-white/25'}`}>
+                                                {t(wt as TranslationKey)}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         </div>
-                    </div>
-                    <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/5">
-                        <div className="flex flex-col">
-                            <span className="text-xs text-white/80">{t('immersiveMode')}</span>
-                            <span className="text-[10px] text-white/40">{t('immersiveModeDesc')}</span>
+
+                        <div className="h-px bg-white/[0.06] mx-4" />
+
+                        {/* ─── Section: Forecast ──────────────────── */}
+                        <div className="px-4 py-3">
+                            <WeatherTimeline collapsed={!forecastOpen} onToggle={() => {
+                                setForecastOpen((v) => {
+                                    const next = !v;
+                                    saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.forecastOpen, next ? 'on' : 'off');
+                                    return next;
+                                });
+                            }} />
                         </div>
-                        <button
-                            type="button"
-                            onClick={() => { 
-                                if (immersive) { setImmersive(false); setMenuOpen(false); } 
-                                else { setImmersive(true); } 
+
+                        <div className="h-px bg-white/[0.06] mx-4" />
+
+                        {/* ─── Section: Parameters ────────────────── */}
+                        <div className="px-4 py-3">
+                            <button type="button" onClick={() => {
+                                setParamsOpen((v) => {
+                                    const next = !v;
+                                    saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.paramsOpen, next ? 'on' : 'off');
+                                    return next;
+                                });
                             }}
-                            className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full transition-all ${immersive ? 'bg-blue-500/80 text-white' : 'bg-white/10 text-white/60 border border-white/10 hover:bg-white/20'}`}
-                        >
-                            {immersive ? t('exit') : t('enter')}
-                        </button>
-                    </div>
-                    <div className="flex items-center justify-between px-3 py-2.5">
-                        <div className="flex flex-col">
-                            <span className="text-xs text-white/80">{t('sound')}</span>
-                            <span className="text-[10px] text-white/40">{t('soundDesc')}</span>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => setSoundEnabled(!soundEnabled)}
-                            className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full transition-all ${soundEnabled ? 'bg-blue-500/80 text-white shadow-lg shadow-blue-500/30' : 'bg-white/10 text-white/60 border border-white/10'}`}
-                        >
-                            {soundEnabled ? t('on') : t('off')}
-                        </button>
-                    </div>
-                    <div className="flex items-center justify-between px-3 py-2.5 border-t border-white/5">
-                        <div className="flex flex-col">
-                            <span className="text-xs text-white/80">{t('worldMap' as TranslationKey)}</span>
-                            <span className="text-[10px] text-white/40">{t('clickMapHint' as TranslationKey)}</span>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => setMapOpen(true)}
-                            className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full transition-all bg-blue-500/15 text-blue-400 border border-blue-500/20 hover:bg-blue-500/25 hover:border-blue-500/30"
-                        >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" /><circle cx="12" cy="10" r="3" />
-                            </svg>
-                            {t('worldMap' as TranslationKey)}
-                        </button>
-                    </div>
-                </div>
-
-                {/* Weather Forecast Timeline (above weather type) */}
-                <WeatherTimeline collapsed={!forecastOpen} onToggle={() => setForecastOpen(v => !v)} />
-
-                {/* Weather Type + Settings */}
-                <div className="space-y-4">
-                    <button
-                        type="button"
-                        onClick={() => setWeatherTypeOpen(v => !v)}
-                        className="flex items-center gap-1.5 w-full text-left group"
-                    >
-                        <span className={`text-[10px] transition-transform ${weatherTypeOpen ? 'rotate-90' : ''}`}>▶</span>
-                        <h3 className="text-[10px] font-bold text-white/40 uppercase tracking-widest group-hover:text-white/60 transition-colors">{t('weatherType')}</h3>
-                    </button>
-                    {weatherTypeOpen && (<>
-                    <div className="grid grid-cols-3 gap-2">
-                        {(['sunny', 'rainy', 'snowy', 'cloudy', 'foggy', 'hail', 'sandstorm'] as WeatherType[]).map((wt) => (
-                            <button
-                                key={wt}
-                                onClick={() => handleTypeChange(wt)}
-                                className={`py-1.5 px-2 rounded-md text-xs font-medium transition-all ${
-                                    weather === wt 
-                                    ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30 ring-1 ring-blue-400' 
-                                    : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
-                                }`}
-                            >
-                                {weatherLabel(wt)}
+                                className="flex items-center justify-between w-full group mb-1">
+                                <div className="flex items-center gap-1.5">
+                                    <SlidersHorizontal size={11} className="text-white/30" />
+                                    <span className="text-[10px] font-bold text-white/35 uppercase tracking-widest group-hover:text-white/55 transition-colors">
+                                        {t('parameters')}
+                                    </span>
+                                </div>
+                                {paramsOpen
+                                    ? <ChevronUp size={12} className="text-white/25" />
+                                    : <ChevronDown size={12} className="text-white/25" />}
                             </button>
-                        ))}
+
+                            {paramsOpen && (
+                                <div className="space-y-4 mt-3">
+                                    {/* Time */}
+                                    <Slider icon={<Clock size={12} className="text-white/40" />}
+                                        label={t('time24h')}
+                                        value={`${Math.floor(config.time || 12).toString().padStart(2, '0')}:${Math.floor(((config.time || 12) % 1) * 60).toString().padStart(2, '0')}`}
+                                        min={0} max={24} step={0.1} current={config.time ?? 12}
+                                        onChange={(v) => set('time', v)} />
+
+                                    {/* Transition */}
+                                    <Slider icon={<RefreshCw size={12} className="text-white/40" />}
+                                        label={t('transitionDuration')}
+                                        value={`${transition.duration.toFixed(1)}s`}
+                                        min={0.5} max={8} step={0.1} current={transition.duration}
+                                        onChange={(v) => setTransitionConfig({ duration: v })} />
+
+                                    {/* ── Sunny ── */}
+                                    {weather === 'sunny' && (
+                                        <Slider icon={<Sun size={12} className="text-amber-400/60" />}
+                                            label={t('lightIntensity')} value={config.intensity.toFixed(1)}
+                                            min={0} max={3} step={0.1} current={config.intensity}
+                                            onChange={(v) => set('intensity', v)} accent="accent-amber-500"
+                                            leftHint={t('soft')} rightHint={t('intense')} />
+                                    )}
+
+                                    {/* ── Rainy / Snowy ── */}
+                                    {(weather === 'rainy' || weather === 'snowy') && (<>
+                                        {weather === 'rainy' && (
+                                            <Slider icon={<Cloud size={12} className="text-blue-400/60" />}
+                                                label={t('cloudCover')} value={`${((config.cloudCover ?? 0.1) * 100).toFixed(0)}%`}
+                                                min={0} max={1} step={0.1} current={config.cloudCover ?? 0.1}
+                                                onChange={(v) => set('cloudCover', v)} accent="accent-blue-400" />
+                                        )}
+                                        <Slider icon={<Droplets size={12} className="text-blue-400/60" />}
+                                            label={weather === 'rainy' ? t('rainfall') : t('snowfall')} value={String(config.particleCount)}
+                                            min={0} max={500} step={10} current={config.particleCount}
+                                            onChange={(v) => set('particleCount', v)} />
+                                        <Slider icon={<CloudRain size={12} className="text-white/40" />}
+                                            label={t('fallSpeed')} value={`${config.speed.toFixed(1)}x`}
+                                            min={0.5} max={3} step={0.1} current={config.speed}
+                                            onChange={(v) => set('speed', v)} />
+                                        <Slider icon={<Wind size={12} className="text-white/40" />}
+                                            label={t('wind')} value={config.wind.toFixed(1)}
+                                            min={-3} max={3} step={0.1} current={config.wind}
+                                            onChange={(v) => set('wind', v)}
+                                            leftHint={t('leftWind')} rightHint={t('rightWind')} />
+                                        {weather === 'rainy' && (
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-1.5">
+                                                    <Zap size={12} className="text-yellow-400/60" />
+                                                    <span className="text-[11px] text-white/60">{t('thunder')}</span>
+                                                </div>
+                                                <Toggle checked={!!config.thunder} onChange={() => set('thunder', !config.thunder)} activeColor="bg-yellow-500/50" />
+                                            </div>
+                                        )}
+                                        {weather === 'snowy' && (
+                                            <Slider icon={<Thermometer size={12} className="text-cyan-400/60" />}
+                                                label={t('temperatureSnow')} value={`${config.temperature ?? 0}°C`}
+                                                min={-10} max={10} step={1} current={config.temperature ?? 0}
+                                                onChange={(v) => set('temperature', v)} accent="accent-cyan-500"
+                                                leftHint={t('freeze')} rightHint={t('melt')} />
+                                        )}
+                                    </>)}
+
+                                    {/* ── Cloudy ── */}
+                                    {weather === 'cloudy' && (<>
+                                        <Slider icon={<Cloud size={12} className="text-slate-300/60" />}
+                                            label={t('cloudCover')} value={`${((config.cloudCover ?? 0.1) * 100).toFixed(0)}%`}
+                                            min={0} max={1} step={0.1} current={config.cloudCover ?? 0.1}
+                                            onChange={(v) => set('cloudCover', v)} />
+                                        <Slider icon={<Wind size={12} className="text-white/40" />}
+                                            label={t('moveSpeed')} value={`${config.speed.toFixed(1)}x`}
+                                            min={0} max={5} step={0.1} current={config.speed}
+                                            onChange={(v) => set('speed', v)} />
+                                    </>)}
+
+                                    {/* ── Foggy ── */}
+                                    {weather === 'foggy' && (
+                                        <Slider icon={<Eye size={12} className="text-gray-400/60" />}
+                                            label={t('fogDensity')} value={`${((config.fogDensity ?? 0.5) * 100).toFixed(0)}%`}
+                                            min={0} max={1} step={0.05} current={config.fogDensity ?? 0.5}
+                                            onChange={(v) => set('fogDensity', v)} />
+                                    )}
+
+                                    {/* ── Hail ── */}
+                                    {weather === 'hail' && (<>
+                                        <Slider icon={<Cloud size={12} className="text-indigo-300/60" />}
+                                            label={t('cloudCover')} value={`${((config.cloudCover ?? 0.8) * 100).toFixed(0)}%`}
+                                            min={0} max={1} step={0.05} current={config.cloudCover ?? 0.8}
+                                            onChange={(v) => set('cloudCover', v)} />
+                                        <Slider icon={<Droplets size={12} className="text-blue-400/60" />}
+                                            label={t('rainfall')} value={String(config.particleCount)}
+                                            min={0} max={30} step={1} current={config.particleCount}
+                                            onChange={(v) => set('particleCount', v)} />
+                                        <Slider icon={<CloudHail size={12} className="text-indigo-300/60" />}
+                                            label={t('hailCount')} value={String(config.hailCount ?? 30)}
+                                            min={10} max={150} step={5} current={config.hailCount ?? 30}
+                                            onChange={(v) => set('hailCount', v)} />
+                                        <Slider icon={<CloudRain size={12} className="text-white/40" />}
+                                            label={t('fallSpeed')} value={`${config.speed.toFixed(1)}x`}
+                                            min={0.5} max={3} step={0.1} current={config.speed}
+                                            onChange={(v) => set('speed', v)} />
+                                        <Slider icon={<Wind size={12} className="text-white/40" />}
+                                            label={t('wind')} value={config.wind.toFixed(1)}
+                                            min={-3} max={3} step={0.1} current={config.wind}
+                                            onChange={(v) => set('wind', v)}
+                                            leftHint={t('leftWind')} rightHint={t('rightWind')} />
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-1.5">
+                                                <Zap size={12} className="text-yellow-400/60" />
+                                                <span className="text-[11px] text-white/60">{t('thunder')}</span>
+                                            </div>
+                                            <Toggle checked={!!config.thunder} onChange={() => set('thunder', !config.thunder)} activeColor="bg-yellow-500/50" />
+                                        </div>
+                                    </>)}
+
+                                    {/* ── Sandstorm ── */}
+                                    {weather === 'sandstorm' && (<>
+                                        <Slider icon={<Wind size={12} className="text-orange-400/60" />}
+                                            label={t('sandDensity')} value={`${((config.sandDensity ?? 0.6) * 100).toFixed(0)}%`}
+                                            min={0} max={1} step={0.05} current={config.sandDensity ?? 0.6}
+                                            onChange={(v) => set('sandDensity', v)} accent="accent-orange-500" />
+                                        <Slider icon={<Wind size={12} className="text-white/40" />}
+                                            label={t('wind')} value={config.wind.toFixed(1)}
+                                            min={-3} max={3} step={0.1} current={config.wind}
+                                            onChange={(v) => set('wind', v)}
+                                            leftHint={t('leftWind')} rightHint={t('rightWind')} />
+                                    </>)}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* ─── Section: Bottom toolbar ────────────── */}
+                        <div className="px-4 pt-1 pb-3">
+                            <div className="h-px bg-white/[0.06] mb-2" />
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-0.5">
+                                    <ToolbarBtn icon={soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+                                        active={soundEnabled} onClick={() => setSoundEnabled(!soundEnabled)} title={t('sound')} />
+                                    <ToolbarBtn icon={immersive ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                                        active={immersive}
+                                        onClick={() => { if (immersive) { setImmersive(false); setMenuOpen(false); } else setImmersive(true); }}
+                                        title={t('immersiveMode')} />
+                                    <ToolbarBtn icon={<LocateFixed size={15} className={isLocating ? 'animate-pulse' : ''} />}
+                                        active={isAuto} onClick={toggleAuto} title={t('locateMe' as TranslationKey)}
+                                        activeClass="bg-green-500/20 text-green-400" />
+                                </div>
+                                <div className="flex items-center gap-0.5">
+                                    <button type="button" onClick={() => setTemperatureUnit(temperatureUnit === '°C' ? '°F' : '°C')}
+                                        className="px-2 py-1.5 rounded-xl text-[10px] font-bold text-white/35 hover:text-white/65 hover:bg-white/[0.05] transition-all"
+                                        title={t('temperatureUnit')}>
+                                        {temperatureUnit}
+                                    </button>
+                                    <button type="button" onClick={() => setLocale(locale === 'en' ? 'zh' : 'en')}
+                                        className="px-2 py-1.5 rounded-xl text-[10px] font-bold text-white/35 hover:text-white/65 hover:bg-white/[0.05] transition-all"
+                                        title={t('language')}>
+                                        {locale === 'en' ? '中' : 'EN'}
+                                    </button>
+                                    <a href="https://github.com/greywen/web-weather" target="_blank" rel="noopener noreferrer"
+                                        className="p-2 rounded-xl text-white/25 hover:text-white/55 hover:bg-white/[0.05] transition-all"
+                                        title="GitHub">
+                                        <Github size={15} />
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-
-                    {/* Global Time Control */}
-                    <div>
-                        <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                            <span className="flex items-center gap-1">{t('time24h')}</span>
-                            <span className="font-mono text-white/50">
-                                {Math.floor(config.time || 12).toString().padStart(2,'0')}:
-                                {Math.floor(((config.time || 12) % 1) * 60).toString().padStart(2,'0')}
-                            </span>
-                        </div>
-                        <input
-                            type="range"
-                            min="0"
-                            max="24"
-                            step="0.1"
-                            value={config.time !== undefined ? config.time : 12}
-                            onChange={(e) => handleConfigChange('time', parseFloat(e.target.value))}
-                            className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                        />
-                        <div className="flex justify-between text-[10px] text-white/20 mt-1">
-                            <span>🌑 0:00</span>
-                            <span>☀️ 12:00</span>
-                            <span>🌑 24:00</span>
-                        </div>
-                    </div>
-                    <div>
-                        <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                            <span>{t('transitionDuration')}</span>
-                            <span className="font-mono text-white/50">{transition.duration.toFixed(1)}s</span>
-                        </div>
-                        <input
-                            type="range"
-                            min="0.5"
-                            max="8"
-                            step="0.1"
-                            value={transition.duration}
-                            onChange={(e) => setTransitionConfig({ duration: parseFloat(e.target.value) })}
-                            className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                        />
-                    </div>
-
-                    {/* Type-specific Parameters */}
-                    
-                    {weather === 'sunny' && (
-                        <div className="space-y-4">
-                            <div>
-                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>{t('lightIntensity')}</span>
-                                    <span className="font-mono text-white/50">{config.intensity.toFixed(1)}</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="3"
-                                    step="0.1"
-                                    value={config.intensity}
-                                    onChange={(e) => handleConfigChange('intensity', parseFloat(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                />
-                                <div className="flex justify-between text-[10px] text-white/20 mt-1">
-                                    <span>{t('soft')}</span>
-                                    <span>{t('intense')}</span>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {(weather === 'rainy' || weather === 'snowy') && (
-                        <div className="space-y-5">
-                            {/* Cloud Cover (For Rainy) */}
-                            {weather === 'rainy' && (
-                                <div>
-                                    <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                        <span>{t('cloudCover')}</span>
-                                        <span className="font-mono text-white/50">{((config.cloudCover !== undefined ? config.cloudCover : 0.1) * 100).toFixed(0)}%</span>
-                                    </div>
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max="1"
-                                        step="0.1"
-                                        value={config.cloudCover !== undefined ? config.cloudCover : 0.1}
-                                        onChange={(e) => handleConfigChange('cloudCover', parseFloat(e.target.value))}
-                                        className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                    />
-                                </div>
-                            )}
-
-                            {/* Particle Count */}
-                            <div>
-                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>{weather === 'rainy' ? t('rainfall') : t('snowfall')}</span>
-                                    <span className="font-mono text-white/50">{config.particleCount}</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="500"
-                                    step="10"
-                                    value={config.particleCount}
-                                    onChange={(e) => handleConfigChange('particleCount', parseInt(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                />
-                            </div>
-
-                            {/* Speed */}
-                            <div>
-                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>{t('fallSpeed')}</span>
-                                    <span className="font-mono text-white/50">{config.speed.toFixed(1)}x</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="0.5"
-                                    max="3.0"
-                                    step="0.1"
-                                    value={config.speed}
-                                    onChange={(e) => handleConfigChange('speed', parseFloat(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                />
-                            </div>
-
-                            {/* Wind (For Rain & Snow) */}
-                            {(weather === 'rainy' || weather === 'snowy') && (
-                                <div>
-                                    <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                        <span>{t('wind')}</span>
-                                        <span className="font-mono text-white/50">{config.wind.toFixed(1)}</span>
-                                    </div>
-                                    <input
-                                        type="range"
-                                        min="-3.0"
-                                        max="3.0"
-                                        step="0.1"
-                                        value={config.wind}
-                                        onChange={(e) => handleConfigChange('wind', parseFloat(e.target.value))}
-                                        className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                    />
-                                    <div className="flex justify-between text-[10px] text-white/20 mt-1">
-                                        <span>{t('leftWind')}</span>
-                                        <span>{t('rightWind')}</span>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Thunder (For Rainy) */}
-                            {weather === 'rainy' && (
-                                <div className="flex items-center justify-between pt-2 border-t border-white/5">
-                                    <div className="flex flex-col">
-                                        <span className="text-xs text-white/80">{t('thunder')}</span>
-                                        <span className="text-[10px] text-white/40">{t('thunderDesc')}</span>
-                                    </div>
-                                    <input
-                                        type="checkbox"
-                                        checked={config.thunder || false}
-                                        onChange={(e) => handleConfigChange('thunder', e.target.checked)}
-                                        className="w-5 h-5 rounded border-gray-600 text-blue-500 bg-white/10 focus:ring-blue-500 focus:ring-offset-slate-900"
-                                    />
-                                </div>
-                            )}
-
-                            {/* Temperature (For Snowy - Melting/Freezing) */}
-                            {weather === 'snowy' && (
-                                <div>
-                                    <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                        <span>{t('temperatureSnow')}</span>
-                                        <span className="font-mono text-white/50">{config.temperature !== undefined ? config.temperature : 0}°C</span>
-                                    </div>
-                                    <input
-                                        type="range"
-                                        min="-10"
-                                        max="10"
-                                        step="1"
-                                        value={config.temperature !== undefined ? config.temperature : 0}
-                                        onChange={(e) => handleConfigChange('temperature', parseInt(e.target.value))}
-                                        className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                    />
-                                    <div className="flex justify-between text-[10px] text-white/20 mt-1">
-                                        <span>{t('freeze')}</span>
-                                        <span>{t('melt')}</span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {/* CLOUDY */}
-                    {weather === 'cloudy' && (
-                        <div className="space-y-4">
-                             <div>
-                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>{t('cloudCover')}</span>
-                                    <span className="font-mono text-white/50">{((config.cloudCover !== undefined ? config.cloudCover : 0.1) * 100).toFixed(0)}%</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="1"
-                                    step="0.1"
-                                    value={config.cloudCover !== undefined ? config.cloudCover : 0.1}
-                                    onChange={(e) => handleConfigChange('cloudCover', parseFloat(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                />
-                            </div>
-                            <div>
-                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>{t('moveSpeed')}</span>
-                                    <span className="font-mono text-white/50">{config.speed.toFixed(1)}x</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="5"
-                                    step="0.1"
-                                    value={config.speed}
-                                    onChange={(e) => handleConfigChange('speed', parseFloat(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* FOGGY */}
-                    {weather === 'foggy' && (
-                        <div className="space-y-4">
-                             <div>
-                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>{t('fogDensity')}</span>
-                                    <span className="font-mono text-white/50">{((config.fogDensity !== undefined ? config.fogDensity : 0.5) * 100).toFixed(0)}%</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="1"
-                                    step="0.05"
-                                    value={config.fogDensity !== undefined ? config.fogDensity : 0.5}
-                                    onChange={(e) => handleConfigChange('fogDensity', parseFloat(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* HAIL */}
-                    {weather === 'hail' && (
-                        <div className="space-y-5">
-                            <div>
-                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>{t('cloudCover')}</span>
-                                    <span className="font-mono text-white/50">{((config.cloudCover !== undefined ? config.cloudCover : 0.1) * 100).toFixed(0)}%</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="1"
-                                    step="0.05"
-                                    value={config.cloudCover !== undefined ? config.cloudCover : 0.8}
-                                    onChange={(e) => handleConfigChange('cloudCover', parseFloat(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                />
-                            </div>
-                            <div>
-                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>{t('rainfall')}</span>
-                                    <span className="font-mono text-white/50">{config.particleCount}</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="30"
-                                    step="1"
-                                    value={config.particleCount}
-                                    onChange={(e) => handleConfigChange('particleCount', parseInt(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                />
-                            </div>
-                            <div>
-                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>{t('hailCount')}</span>
-                                    <span className="font-mono text-white/50">{config.hailCount !== undefined ? config.hailCount : 30}</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="10"
-                                    max="150"
-                                    step="5"
-                                    value={config.hailCount !== undefined ? config.hailCount : 30}
-                                    onChange={(e) => handleConfigChange('hailCount', parseInt(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                />
-                            </div>
-                            <div>
-                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>{t('fallSpeed')}</span>
-                                    <span className="font-mono text-white/50">{config.speed.toFixed(1)}x</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="0.5"
-                                    max="3.0"
-                                    step="0.1"
-                                    value={config.speed}
-                                    onChange={(e) => handleConfigChange('speed', parseFloat(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                />
-                            </div>
-                            <div>
-                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>{t('wind')}</span>
-                                    <span className="font-mono text-white/50">{config.wind.toFixed(1)}</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="-3.0"
-                                    max="3.0"
-                                    step="0.1"
-                                    value={config.wind}
-                                    onChange={(e) => handleConfigChange('wind', parseFloat(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                />
-                                <div className="flex justify-between text-[10px] text-white/20 mt-1">
-                                    <span>{t('leftWind')}</span>
-                                    <span>{t('rightWind')}</span>
-                                </div>
-                            </div>
-                            <div className="flex items-center justify-between pt-2 border-t border-white/5">
-                                <div className="flex flex-col">
-                                    <span className="text-xs text-white/80">{t('thunder')}</span>
-                                    <span className="text-[10px] text-white/40">{t('thunderDesc')}</span>
-                                </div>
-                                <input
-                                    type="checkbox"
-                                    checked={config.thunder || false}
-                                    onChange={(e) => handleConfigChange('thunder', e.target.checked)}
-                                    className="w-5 h-5 rounded border-gray-600 text-blue-500 bg-white/10 focus:ring-blue-500 focus:ring-offset-slate-900"
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* SANDSTORM */}
-                    {weather === 'sandstorm' && (
-                        <div className="space-y-5">
-                            <div>
-                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>{t('sandDensity')}</span>
-                                    <span className="font-mono text-white/50">{((config.sandDensity !== undefined ? config.sandDensity : 0.6) * 100).toFixed(0)}%</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="1"
-                                    step="0.05"
-                                    value={config.sandDensity !== undefined ? config.sandDensity : 0.6}
-                                    onChange={(e) => handleConfigChange('sandDensity', parseFloat(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                />
-                            </div>
-                            <div>
-                                <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                                    <span>{t('wind')}</span>
-                                    <span className="font-mono text-white/50">{config.wind.toFixed(1)}</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="-3.0"
-                                    max="3.0"
-                                    step="0.1"
-                                    value={config.wind}
-                                    onChange={(e) => handleConfigChange('wind', parseFloat(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                />
-                                <div className="flex justify-between text-[10px] text-white/20 mt-1">
-                                    <span>{t('leftWind')}</span>
-                                    <span>{t('rightWind')}</span>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                    </>)}
                 </div>
+            </div>
 
-            </div>
-            </div>
-        </div>
-        {mapOpen && (
-            <WorldMap
-                onSelectLocation={(lat, lon) => {
-                    setLocation(lat, lon);
-                    setMapOpen(false);
-                }}
-                onClose={() => setMapOpen(false)}
-                initialLat={customCoords?.lat}
-                initialLon={customCoords?.lon}
-            />
-        )}
+            {/* ── WorldMap modal ───────────────────────────────── */}
+            {mapOpen && (
+                <WorldMap
+                    onSelectLocation={(lat, lon) => { setLocation(lat, lon); setMapOpen(false); }}
+                    onClose={() => setMapOpen(false)}
+                    initialLat={customCoords?.lat}
+                    initialLon={customCoords?.lon}
+                />
+            )}
         </>
     );
 }

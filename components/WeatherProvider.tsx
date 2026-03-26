@@ -15,6 +15,7 @@ interface WeatherContextType {
   weather: WeatherType;
   setWeather: (type: WeatherType) => void;
   isAuto: boolean;
+    isLocating: boolean;
   toggleAuto: () => void;
   weatherData: WeatherData | null;
   forecastData: ForecastData | null;
@@ -76,6 +77,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
   const [isAuto, setIsAuto] = useState<boolean>(() => {
     return readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.autoMode) === 'on';
   });
+    const [isLocating, setIsLocating] = useState<boolean>(false);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [forecastData, setForecastData] = useState<ForecastData | null>(null);
   const [soundEnabled, setSoundEnabledState] = useState<boolean>(() => {
@@ -415,18 +417,23 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
 
         // 1. Initial Fetch
         if (customCoords) {
+            setIsLocating(false);
             fetchForLocation(customCoords.lat, customCoords.lon);
         } else if ("geolocation" in navigator) {
+            setIsLocating(true);
             navigator.geolocation.getCurrentPosition(
                 (position) => {
+                    setIsLocating(false);
                     fetchForLocation(position.coords.latitude, position.coords.longitude);
                 },
                 (error) => {
                     console.error("Geo error:", error);
+                    setIsLocating(false);
                     fetchForLocation(51.50, -0.12);
                 }
             );
         } else {
+             setIsLocating(false);
              setTimeout(() => {
                  fetchForLocation(51.50, -0.12);
              }, 0);
@@ -435,12 +442,22 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
         // 2. Weather Fetch Interval (10 minutes)
         const weatherInterval = setInterval(() => {
              if (customCoords) {
+                setIsLocating(false);
                 fetchForLocation(customCoords.lat, customCoords.lon);
              } else if ("geolocation" in navigator) {
+                setIsLocating(true);
                 navigator.geolocation.getCurrentPosition(
-                    (p) => { fetchForLocation(p.coords.latitude, p.coords.longitude); },
-                    () => { fetchForLocation(51.50, -0.12); }
+                    (p) => {
+                        setIsLocating(false);
+                        fetchForLocation(p.coords.latitude, p.coords.longitude);
+                    },
+                    () => {
+                        setIsLocating(false);
+                        fetchForLocation(51.50, -0.12);
+                    }
                 );
+            } else {
+                setIsLocating(false);
             }
         }, 10 * 60 * 1000); // 10 minutes
 
@@ -461,6 +478,10 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
         };
     }
     }, [isAuto, customCoords]);
+
+    useEffect(() => {
+            if (!isAuto) setIsLocating(false);
+    }, [isAuto]);
 
   useEffect(() => {
       return () => {
@@ -581,6 +602,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
             weather, 
             setWeather: (w: WeatherType) => applyWeather(w, true), 
             isAuto, 
+            isLocating,
             toggleAuto, 
             weatherData,
             forecastData,
@@ -648,12 +670,6 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
              {!immersive && (
                  <div className="absolute top-6 right-2.5 text-right text-xs text-white/60 font-mono">
                      <p>{fps} FPS</p>
-                     {weatherData && isAuto && (
-                       <>
-                         <p>{formatTemp(weatherData.temperature, temperatureUnit)}</p>
-                         <p>Sun: {(weatherData.sunProgress * 100).toFixed(0)}%</p>
-                       </>
-                     )}
                  </div>
              )}
         </main>

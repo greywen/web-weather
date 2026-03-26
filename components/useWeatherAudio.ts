@@ -489,18 +489,13 @@ function createRainAmbient(ctx: AudioContext, dest: AudioNode): AmbientSet {
   const body = createFilteredNoise(ctx, 'bandpass', 3000, 0.8);
   body.gain.connect(panner);
 
-  // Layer 2: Light rain texture (highpass hiss)
-  const hiss = createFilteredNoise(ctx, 'highpass', 5000, 0.5);
-  hiss.gain.connect(panner);
-
-  // Layer 3: Low rain rumble
+  // Layer 2: Low rain rumble
   const rumble = createFilteredNoise(ctx, 'lowpass', 400, 0.6);
   rumble.gain.connect(panner);
 
   return {
     layers: [
       { ...body, started: false },
-      { ...hiss, started: false },
       { ...rumble, started: false },
     ],
     panner,
@@ -733,10 +728,8 @@ export function useWeatherAudio(
 
         // Body volume scales with rain amount and speed
         fadeTo(rain.layers[0].gain, 0.25 * rainFactor + 0.05, fadeTime);
-        // Disable rain hiss layer to avoid persistent high-frequency "ssss" noise.
-        fadeTo(rain.layers[1].gain, 0, fadeTime);
         // Rumble
-        fadeTo(rain.layers[2].gain, 0.12 * rainFactor + 0.03, fadeTime);
+        fadeTo(rain.layers[1].gain, 0.12 * rainFactor + 0.03, fadeTime);
 
         // Modulate rain filter frequency with speed for dynamic texture
         rain.layers[0].filter.frequency.setTargetAtTime(
@@ -853,8 +846,7 @@ export function useWeatherAudio(
       } else {
         const rainFactor = particleRatio * 0.4 + speedRatio * 0.3;
         fadeTo(rain.layers[0].gain, 0.15 * rainFactor + 0.03, fadeTime);
-        fadeTo(rain.layers[1].gain, 0, fadeTime);
-        fadeTo(rain.layers[2].gain, 0.08 * rainFactor + 0.02, fadeTime);
+        fadeTo(rain.layers[1].gain, 0.08 * rainFactor + 0.02, fadeTime);
       }
 
       const hailCount = config.hailCount ?? 30;
