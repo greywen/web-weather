@@ -107,6 +107,7 @@ const translations = {
     confirmLocation: 'Confirm',
     clickMapHint: 'Click on map to select location',
     locateMe: 'Locate Me',
+    loading: 'Loading map...',
   },
   zh: {
     // Panel
@@ -200,6 +201,7 @@ const translations = {
     confirmLocation: '确认',
     clickMapHint: '点击地图选择位置',
     locateMe: '定位当前',
+    loading: '加载地图中...',
   },
 } as const;
 

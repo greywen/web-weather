@@ -56,33 +56,41 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
           duration: 0.5,
       });
     const transitionRafRef = useRef<number | null>(null);
-  // Initialize time with current hour
-  const [config, setConfigState] = useState<WeatherConfig>(() => {
-      const now = new Date();
-      return {
-          ...DEFAULT_CONFIG,
-          time: now.getHours() + now.getMinutes() / 60
-      };
-  });
-  const [customCoords, setCustomCoords] = useState<{ lat: number; lon: number } | null>(() => {
-    const saved = readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.mapLocation);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (typeof parsed?.lat === 'number' && typeof parsed?.lon === 'number') return parsed;
-      } catch { /* corrupted data */ }
-    }
-    return null;
-  });
-  const [isAuto, setIsAuto] = useState<boolean>(() => {
-    return readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.autoMode) === 'on';
-  });
+  // Use stable defaults for SSR; hydrate from localStorage/Date in useEffect
+  const [config, setConfigState] = useState<WeatherConfig>(() => ({
+      ...DEFAULT_CONFIG,
+      time: 12, // stable default; real time set after mount
+  }));
+  const [customCoords, setCustomCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const [isAuto, setIsAuto] = useState<boolean>(false);
     const [isLocating, setIsLocating] = useState<boolean>(false);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [forecastData, setForecastData] = useState<ForecastData | null>(null);
-  const [soundEnabled, setSoundEnabledState] = useState<boolean>(() => {
-            return readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.sound) === 'on';
-    });
+  const [soundEnabled, setSoundEnabledState] = useState<boolean>(false);
+
+  // Hydrate client-only state after mount to avoid SSR mismatch
+  useEffect(() => {
+    const now = new Date();
+    setConfigState(prev => ({ ...prev, time: now.getHours() + now.getMinutes() / 60 }));
+
+    const savedCoords = readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.mapLocation);
+    if (savedCoords) {
+      try {
+        const parsed = JSON.parse(savedCoords);
+        if (typeof parsed?.lat === 'number' && typeof parsed?.lon === 'number') {
+          setCustomCoords(parsed);
+        }
+      } catch { /* corrupted data */ }
+    }
+
+    if (readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.autoMode) === 'on') {
+      setIsAuto(true);
+    }
+
+    if (readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.sound) === 'on') {
+      setSoundEnabledState(true);
+    }
+  }, []);
   const setSoundEnabled = useCallback((v: boolean) => {
       setSoundEnabledState(v);
             saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.sound, v ? 'on' : 'off');

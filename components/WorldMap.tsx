@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Search, MapPin, X, Check } from 'lucide-react';
+import { Search, MapPin, X, Check, Loader2 } from 'lucide-react';
 import { useI18n, TranslationKey } from './i18n';
 import 'leaflet/dist/leaflet.css';
 
@@ -95,7 +95,11 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
   const [selectedName, setSelectedName] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [entering, setEntering] = useState(true);
+  const [mapLoading, setMapLoading] = useState(true);
   const { t, locale } = useI18n();
+  const localeRef = useRef(locale);
+  const geocodeSeqRef = useRef(0);
+  useEffect(() => { localeRef.current = locale; }, [locale]);
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => setEntering(false));
@@ -112,14 +116,32 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
     });
   }, []);
 
+  // Re-geocode selected location when locale changes
   useEffect(() => {
-    let map: L.Map | undefined;
+    if (selectedLat !== null && selectedLon !== null) {
+      const seq = ++geocodeSeqRef.current;
+      reverseGeocode(selectedLat, selectedLon, locale).then(name => {
+        if (geocodeSeqRef.current === seq) setSelectedName(name);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locale]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let fallbackTimer: ReturnType<typeof setTimeout>;
 
     const initMap = async () => {
       const L = (await import('leaflet')).default;
-      if (!mapContainerRef.current) return;
+      if (cancelled || !mapContainerRef.current) return;
 
-      map = L.map(mapContainerRef.current, {
+      // Prevent re-initializing if already mounted (React strict mode)
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+
+      const map = L.map(mapContainerRef.current, {
         zoomControl: false,
         attributionControl: false,
         minZoom: 2,
@@ -131,24 +153,68 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
         initialLat != null ? 5 : 2
       );
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
-        maxZoom: 18,
-      }).addTo(map);
+      if (cancelled) { map.remove(); return; }
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
-        maxZoom: 18,
-        pane: 'overlayPane',
-      }).addTo(map);
+      // Tile providers: try CARTO (dark theme), fallback to OSM if unreachable
+      const CARTO_BASE = 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png';
+      const CARTO_LABELS = 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png';
+      const OSM_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+      // Probe CARTO availability with a small test tile (timeout 4s)
+      let useCarto = true;
+      try {
+        const probe = new AbortController();
+        const probeTimer = setTimeout(() => probe.abort(), 4000);
+        const res = await fetch('https://a.basemaps.cartocdn.com/dark_nolabels/0/0/0.png', {
+          signal: probe.signal,
+          mode: 'no-cors',
+        });
+        clearTimeout(probeTimer);
+        // mode: no-cors gives opaque response (status 0), but no error means reachable
+        if (res.type !== 'opaque' && !res.ok) useCarto = false;
+      } catch {
+        useCarto = false;
+      }
+
+      if (cancelled) { map.remove(); return; }
+
+      let tilesLoaded = 0;
+      const expectedTiles = useCarto ? 2 : 1;
+      const onTileLayerReady = () => {
+        tilesLoaded++;
+        if (tilesLoaded >= expectedTiles && !cancelled) setMapLoading(false);
+      };
+
+      if (useCarto) {
+        const baseTiles = L.tileLayer(CARTO_BASE, { maxZoom: 18 }).addTo(map);
+        baseTiles.once('load', onTileLayerReady);
+        baseTiles.once('tileerror', onTileLayerReady);
+
+        const labelTiles = L.tileLayer(CARTO_LABELS, { maxZoom: 18, pane: 'overlayPane' }).addTo(map);
+        labelTiles.once('load', onTileLayerReady);
+        labelTiles.once('tileerror', onTileLayerReady);
+      } else {
+        const osmTiles = L.tileLayer(OSM_URL, { maxZoom: 19, className: 'osm-dark-tiles' }).addTo(map);
+        osmTiles.once('load', onTileLayerReady);
+        osmTiles.once('tileerror', onTileLayerReady);
+      }
+
+      // Fallback: hide loading indicator after 10s even if tiles haven't loaded
+      fallbackTimer = setTimeout(() => { if (!cancelled) setMapLoading(false); }, 10000);
 
       L.control.zoom({ position: 'topright' }).addTo(map);
 
       mapRef.current = map;
 
       const icon = await createMarkerIcon();
+      if (cancelled) { map.remove(); mapRef.current = null; return; }
 
       if (initialLat != null && initialLon != null) {
         markerRef.current = L.marker([initialLat, initialLon], { icon }).addTo(map);
-        reverseGeocode(initialLat, initialLon, locale).then(name => setSelectedName(name));
+        const seq = ++geocodeSeqRef.current;
+        reverseGeocode(initialLat, initialLon, localeRef.current).then(name => {
+          if (!cancelled && geocodeSeqRef.current === seq) setSelectedName(name);
+        });
       }
 
       map.on('click', async (e: L.LeafletMouseEvent) => {
@@ -164,13 +230,21 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
           markerRef.current = L.marker([lat, lng], { icon: clickIcon }).addTo(map!);
         }
 
-        const name = await reverseGeocode(lat, lng, locale);
-        setSelectedName(name);
+        const clickSeq = ++geocodeSeqRef.current;
+        const name = await reverseGeocode(lat, lng, localeRef.current);
+        if (geocodeSeqRef.current === clickSeq) setSelectedName(name);
       });
     };
 
     initMap();
-    return () => { if (map) map.remove(); };
+    return () => {
+      cancelled = true;
+      clearTimeout(fallbackTimer);
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -241,6 +315,16 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
       `}>
         {/* Map fills the panel */}
         <div ref={mapContainerRef} className="absolute inset-0 md:rounded-2xl overflow-hidden" />
+
+        {/* Loading indicator */}
+        {mapLoading && (
+          <div className="absolute inset-0 z-[10] flex items-center justify-center bg-slate-950/60 md:rounded-2xl pointer-events-none">
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 size={28} className="text-white/50 animate-spin" />
+              <p className="text-[13px] text-white/40">{t('loading' as TranslationKey)}</p>
+            </div>
+          </div>
+        )}
 
         {/* Search bar */}
         <div className={`absolute top-3 left-3 right-3 z-[20] transition-all duration-500 ${entering ? 'opacity-0 -translate-y-3' : 'opacity-100 translate-y-0'}`}>
@@ -382,6 +466,9 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
             background: #0f172a !important;
             font-family: inherit;
             z-index: 0 !important;
+          }
+          .osm-dark-tiles {
+            filter: invert(1) hue-rotate(180deg) brightness(0.8) contrast(1.1) saturate(0.3);
           }
           .leaflet-pane {
             z-index: 1 !important;
