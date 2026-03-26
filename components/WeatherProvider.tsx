@@ -6,10 +6,35 @@ import WeatherCanvas from './WeatherCanvas';
 import FogOverlay from './FogOverlay';
 import CloudOverlay from './CloudOverlay';
 import { useWeatherAudio } from './useWeatherAudio';
-import { useI18n, formatTemp } from './i18n';
-import { CONFIG_STORAGE_KEYS, readConfigFromLocalStorage, saveConfigToLocalStorage } from '../lib/configStorage';
+import { useI18n } from './i18n';
+import { CONFIG_STORAGE_KEYS, readConfigFromLocalStorage, saveConfigToLocalStorage, removeConfigFromLocalStorage } from '../lib/configStorage';
 
 const FPS_INITIAL = 0;
+const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
+const BEIJING_COORDS = { lat: 39.9042, lon: 116.4074 };
+
+async function reverseGeocode(lat: number, lon: number, locale: string): Promise<string> {
+  if (lat === BEIJING_COORDS.lat && lon === BEIJING_COORDS.lon) {
+    return locale.startsWith('zh') ? '北京' : 'Beijing';
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(
+      `${NOMINATIM_BASE}/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`,
+      { headers: { 'Accept-Language': locale }, signal: controller.signal }
+    );
+    if (!res.ok) return `Lat: ${lat.toFixed(2)}, Lon: ${lon.toFixed(2)}`;
+    const data = await res.json();
+    const addr = data.address || {};
+    const parts = [addr.city || addr.town || addr.village || addr.county, addr.state, addr.country].filter(Boolean);
+    return parts.join(', ') || data.display_name || `Lat: ${lat.toFixed(2)}, Lon: ${lon.toFixed(2)}`;
+  } catch {
+        return `Lat: ${lat.toFixed(2)}, Lon: ${lon.toFixed(2)}`;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 interface WeatherContextType {
   weather: WeatherType;
@@ -45,7 +70,8 @@ export const useWeather = () => {
 };
 
 export const WeatherProvider = ({ children }: { children: ReactNode }) => {
-    const { temperatureUnit } = useI18n();
+    const { locale } = useI18n();
+    const geocodeSeqRef = useRef(0);
     const [weather, setWeatherState] = useState<WeatherType>('sunny');
     const [currentWeather, setCurrentWeather] = useState<WeatherType>('sunny');
     const [transitionFrom, setTransitionFrom] = useState<WeatherType>('sunny');
@@ -70,26 +96,28 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
 
   // Hydrate client-only state after mount to avoid SSR mismatch
   useEffect(() => {
-    const now = new Date();
-    setConfigState(prev => ({ ...prev, time: now.getHours() + now.getMinutes() / 60 }));
+    queueMicrotask(() => {
+      const now = new Date();
+      setConfigState(prev => ({ ...prev, time: now.getHours() + now.getMinutes() / 60 }));
 
-    const savedCoords = readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.mapLocation);
-    if (savedCoords) {
-      try {
-        const parsed = JSON.parse(savedCoords);
-        if (typeof parsed?.lat === 'number' && typeof parsed?.lon === 'number') {
-          setCustomCoords(parsed);
-        }
-      } catch { /* corrupted data */ }
-    }
+      const savedCoords = readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.mapLocation);
+      if (savedCoords) {
+        try {
+          const parsed = JSON.parse(savedCoords);
+          if (typeof parsed?.lat === 'number' && typeof parsed?.lon === 'number') {
+            setCustomCoords(parsed);
+          }
+        } catch { /* corrupted data */ }
+      }
 
-    if (readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.autoMode) === 'on') {
-      setIsAuto(true);
-    }
+      if (readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.autoMode) === 'on') {
+        setIsAuto(true);
+      }
 
-    if (readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.sound) === 'on') {
-      setSoundEnabledState(true);
-    }
+      if (readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.sound) === 'on') {
+        setSoundEnabledState(true);
+      }
+    });
   }, []);
   const setSoundEnabled = useCallback((v: boolean) => {
       setSoundEnabledState(v);
@@ -339,7 +367,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
               apparentTemperature: current.apparent_temperature ?? current.temperature_2m,
               isDay: current.is_day === 1,
               sunProgress: progress,
-              locationName: `Lat: ${lat.toFixed(2)}, Lon: ${lon.toFixed(2)}`,
+              locationName: '',
               rain: current.rain ?? 0,
               showers: current.showers ?? 0,
               snowfall: current.snowfall ?? 0,
@@ -353,7 +381,18 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
               weatherCode: current.weather_code ?? 0,
           };
 
-          setWeatherData(newWeatherData);
+          setWeatherData(prev => ({
+              ...newWeatherData,
+              locationName: prev?.locationName || '',
+          }));
+
+          // Reverse geocode to get location name (non-blocking)
+          const seq = ++geocodeSeqRef.current;
+          reverseGeocode(lat, lon, locale).then(name => {
+              if (geocodeSeqRef.current === seq) {
+                  setWeatherData(prev => prev ? { ...prev, locationName: name } : prev);
+              }
+          });
 
           // Parse forecast data
           if (data.hourly && data.daily) {
@@ -425,10 +464,10 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
 
         // 1. Initial Fetch
         if (customCoords) {
-            setIsLocating(false);
+            queueMicrotask(() => setIsLocating(false));
             fetchForLocation(customCoords.lat, customCoords.lon);
         } else if ("geolocation" in navigator) {
-            setIsLocating(true);
+            queueMicrotask(() => setIsLocating(true));
             navigator.geolocation.getCurrentPosition(
                 (position) => {
                     setIsLocating(false);
@@ -437,13 +476,13 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
                 (error) => {
                     console.error("Geo error:", error);
                     setIsLocating(false);
-                    fetchForLocation(51.50, -0.12);
+                    fetchForLocation(BEIJING_COORDS.lat, BEIJING_COORDS.lon);
                 }
             );
         } else {
-             setIsLocating(false);
+             queueMicrotask(() => setIsLocating(false));
              setTimeout(() => {
-                 fetchForLocation(51.50, -0.12);
+                 fetchForLocation(BEIJING_COORDS.lat, BEIJING_COORDS.lon);
              }, 0);
         }
 
@@ -461,7 +500,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
                     },
                     () => {
                         setIsLocating(false);
-                        fetchForLocation(51.50, -0.12);
+                        fetchForLocation(BEIJING_COORDS.lat, BEIJING_COORDS.lon);
                     }
                 );
             } else {
@@ -488,7 +527,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
     }, [isAuto, customCoords]);
 
     useEffect(() => {
-            if (!isAuto) setIsLocating(false);
+            if (!isAuto) queueMicrotask(() => setIsLocating(false));
     }, [isAuto]);
 
   useEffect(() => {
@@ -505,6 +544,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
           // Avoid showing stale timestamp while waiting for the first fresh auto fetch.
           setLastUpdated(null);
           setCustomCoords(null); // Reset to geolocation when manually toggling auto
+          removeConfigFromLocalStorage(CONFIG_STORAGE_KEYS.mapLocation);
       }
       setIsAuto(next);
       saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.autoMode, next ? 'on' : 'off');
@@ -676,7 +716,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
 
              {/* Live Data Display */}
              {!immersive && (
-                 <div className="absolute top-6 right-2.5 text-right text-xs text-white/60 font-mono">
+                 <div className="absolute top-6 right-2.5 text-right text-xs text-[var(--text-60)] font-mono">
                      <p>{fps} FPS</p>
                  </div>
              )}

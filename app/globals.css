@@ -1,34 +1,125 @@
 @import "tailwindcss";
 
-:root {
+/* ── Theme tokens ───────────────────────────────────────── */
+:root, [data-theme="light"] {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Panel */
+  --panel-bg: rgba(255, 255, 255, 0.92);
+  --panel-border: rgba(0, 0, 0, 0.08);
+  --panel-shadow: 0 8px 60px rgba(0, 0, 0, 0.12);
+  --badge-bg: rgba(255, 255, 255, 0.85);
+  --badge-border: rgba(0, 0, 0, 0.08);
+  --badge-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  --badge-hover: rgba(245, 245, 245, 0.95);
+
+  /* Text */
+  --text-primary: rgba(10, 10, 10, 1);
+  --text-90: rgba(10, 10, 10, 0.92);
+  --text-80: rgba(10, 10, 10, 0.85);
+  --text-70: rgba(10, 10, 10, 0.75);
+  --text-60: rgba(10, 10, 10, 0.65);
+  --text-40: rgba(10, 10, 10, 0.55);
+  --text-35: rgba(10, 10, 10, 0.50);
+  --text-25: rgba(10, 10, 10, 0.42);
+  --text-20: rgba(10, 10, 10, 0.35);
+
+  /* Surfaces */
+  --surface: rgba(0, 0, 0, 0.03);
+  --surface-hover: rgba(0, 0, 0, 0.06);
+  --surface-active: rgba(0, 0, 0, 0.1);
+
+  /* Borders */
+  --border: rgba(0, 0, 0, 0.07);
+  --border-hover: rgba(0, 0, 0, 0.12);
+  --border-active: rgba(0, 0, 0, 0.18);
+
+  /* Divider */
+  --divider: rgba(0, 0, 0, 0.07);
+
+  /* Controls */
+  --slider-track: rgba(0, 0, 0, 0.1);
+  --toggle-off: rgba(0, 0, 0, 0.12);
+  --toggle-knob-off: rgba(0, 0, 0, 0.35);
+  --toggle-knob-on: #ffffff;
+
+  /* Dropdown */
+  --dropdown-bg: rgba(255, 255, 255, 0.97);
+  --dropdown-border: rgba(0, 0, 0, 0.1);
+
+  /* Scrollbar */
+  --scrollbar-thumb: rgba(0, 0, 0, 0.12);
+  --scrollbar-hover: rgba(0, 0, 0, 0.25);
+
+  /* Spinner */
+  --spinner-track: rgba(0, 0, 0, 0.1);
+  --spinner-head: rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="dark"] {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+
+  --panel-bg: rgba(15, 23, 42, 0.9);
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --panel-shadow: 0 8px 60px rgba(0, 0, 0, 0.5);
+  --badge-bg: rgba(15, 23, 42, 0.8);
+  --badge-border: rgba(255, 255, 255, 0.08);
+  --badge-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+  --badge-hover: rgba(15, 23, 42, 0.95);
+
+  --text-primary: rgba(255, 255, 255, 1);
+  --text-90: rgba(255, 255, 255, 0.92);
+  --text-80: rgba(255, 255, 255, 0.85);
+  --text-70: rgba(255, 255, 255, 0.78);
+  --text-60: rgba(255, 255, 255, 0.68);
+  --text-40: rgba(255, 255, 255, 0.55);
+  --text-35: rgba(255, 255, 255, 0.48);
+  --text-25: rgba(255, 255, 255, 0.40);
+  --text-20: rgba(255, 255, 255, 0.32);
+
+  --surface: rgba(255, 255, 255, 0.04);
+  --surface-hover: rgba(255, 255, 255, 0.06);
+  --surface-active: rgba(255, 255, 255, 0.1);
+
+  --border: rgba(255, 255, 255, 0.06);
+  --border-hover: rgba(255, 255, 255, 0.1);
+  --border-active: rgba(255, 255, 255, 0.15);
+
+  --divider: rgba(255, 255, 255, 0.06);
+
+  --slider-track: rgba(255, 255, 255, 0.1);
+  --toggle-off: rgba(255, 255, 255, 0.1);
+  --toggle-knob-off: rgba(255, 255, 255, 0.4);
+  --toggle-knob-on: #ffffff;
+
+  --dropdown-bg: rgba(30, 41, 59, 0.95);
+  --dropdown-border: rgba(255, 255, 255, 0.1);
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --scrollbar-hover: rgba(255, 255, 255, 0.3);
+
+  --spinner-track: rgba(255, 255, 255, 0.1);
+  --spinner-head: rgba(255, 255, 255, 0.4);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-sans: var(--font-inter);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
 }
 
 /* Slim scrollbar for settings panel */
 .settings-scroll {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 .settings-scroll::-webkit-scrollbar {
@@ -40,12 +131,12 @@ body {
 }
 
 .settings-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--scrollbar-thumb);
   border-radius: 4px;
 }
 
 .settings-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--scrollbar-hover);
 }
 
 /* Hide scrollbar for weather type horizontal scroller */

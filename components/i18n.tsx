@@ -1,10 +1,11 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { CONFIG_STORAGE_KEYS, readConfigFromLocalStorage, saveConfigToLocalStorage } from '../lib/configStorage';
 
 export type Locale = 'en' | 'zh';
 export type TemperatureUnit = '°C' | '°F';
+export type Theme = 'light' | 'dark';
 
 export function convertTemp(celsius: number, unit: TemperatureUnit): number {
   return unit === '°F' ? celsius * 9 / 5 + 32 : celsius;
@@ -17,7 +18,7 @@ export function formatTemp(celsius: number, unit: TemperatureUnit): string {
 const translations = {
   en: {
     // Panel
-    weatherControl: 'Weather Control',
+    weatherControl: 'Weather Control', 
     hidePanel: 'Hide Panel',
     showPanel: 'Show Panel',
     closePanel: 'Close Panel',
@@ -101,12 +102,18 @@ const translations = {
     sat: 'Sat',
     sun: 'Sun',
 
+    // Theme
+    theme: 'Theme',
+    lightMode: 'Light',
+    darkMode: 'Dark',
+
     // World Map
     worldMap: 'World Map',
     searchPlaceholder: 'Search city or place...',
     confirmLocation: 'Confirm',
     clickMapHint: 'Click on map to select location',
     locateMe: 'Locate Me',
+    unknownLocation: 'Unknown Location',
     loading: 'Loading map...',
   },
   zh: {
@@ -195,12 +202,18 @@ const translations = {
     sat: '周六',
     sun: '周日',
 
+    // Theme
+    theme: '主题',
+    lightMode: '浅色',
+    darkMode: '深色',
+
     // World Map
     worldMap: '世界地图',
     searchPlaceholder: '搜索城市或地点...',
     confirmLocation: '确认',
     clickMapHint: '点击地图选择位置',
     locateMe: '定位当前',
+    unknownLocation: '未知位置',
     loading: '加载地图中...',
   },
 } as const;
@@ -213,6 +226,8 @@ interface I18nContextType {
   t: (key: TranslationKey) => string;
   temperatureUnit: TemperatureUnit;
   setTemperatureUnit: (unit: TemperatureUnit) => void;
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
 }
 
 const I18nContext = createContext<I18nContextType | undefined>(undefined);
@@ -228,7 +243,17 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     if (saved === '°C' || saved === '°F') return saved;
     return '°C';
   });
+  const [theme, setThemeState] = useState<Theme>(() => {
+    const saved = readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.theme);
+    if (saved === 'light' || saved === 'dark') return saved;
+    return 'light';
+  });
   const [mounted] = useState(() => typeof window !== 'undefined');
+
+  // Sync data-theme attribute to <html>
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
 
   const setLocale = useCallback((l: Locale) => {
     setLocaleState(l);
@@ -240,12 +265,17 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.temperatureUnit, unit);
   }, []);
 
+  const setTheme = useCallback((t: Theme) => {
+    setThemeState(t);
+    saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.theme, t);
+  }, []);
+
   const t = useCallback((key: TranslationKey): string => {
     return translations[locale][key] ?? key;
   }, [locale]);
 
   return (
-    <I18nContext.Provider value={{ locale, setLocale, t, temperatureUnit: tempUnit, setTemperatureUnit }}>
+    <I18nContext.Provider value={{ locale, setLocale, t, temperatureUnit: tempUnit, setTemperatureUnit, theme, setTheme }}>
       {mounted ? children : null}
     </I18nContext.Provider>
   );

@@ -20,6 +20,20 @@ interface NominatimResult {
 
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
 
+// Cache the CARTO tile probe result for the lifetime of the page.
+// null = not yet probed; true/false = reachable or not.
+let cartoProbeResult: boolean | null = null;
+
+const CONTINENT_LABELS = [
+  { name: { en: 'Asia', zh: '亚洲' }, lat: 48, lon: 85 },
+  { name: { en: 'Europe', zh: '欧洲' }, lat: 54, lon: 15 },
+  { name: { en: 'Africa', zh: '非洲' }, lat: 5, lon: 22 },
+  { name: { en: 'North America', zh: '北美洲' }, lat: 48, lon: -100 },
+  { name: { en: 'South America', zh: '南美洲' }, lat: -15, lon: -58 },
+  { name: { en: 'Oceania', zh: '大洋洲' }, lat: -25, lon: 135 },
+  { name: { en: 'Antarctica', zh: '南极洲' }, lat: -78, lon: 0 },
+];
+
 async function fetchJsonWithRetry<T>(
   url: string,
   options: RequestInit,
@@ -96,9 +110,10 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
   const [searchFocused, setSearchFocused] = useState(false);
   const [entering, setEntering] = useState(true);
   const [mapLoading, setMapLoading] = useState(true);
-  const { t, locale } = useI18n();
+  const { t, locale, theme } = useI18n();
   const localeRef = useRef(locale);
   const geocodeSeqRef = useRef(0);
+  const savedViewRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
   useEffect(() => { localeRef.current = locale; }, [locale]);
 
   useEffect(() => {
@@ -135,8 +150,14 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
       const L = (await import('leaflet')).default;
       if (cancelled || !mapContainerRef.current) return;
 
-      // Prevent re-initializing if already mounted (React strict mode)
+      // Restore saved view or use defaults
+      let savedCenter: [number, number] | null = savedViewRef.current?.center ?? null;
+      let savedZoom: number | null = savedViewRef.current?.zoom ?? null;
+      savedViewRef.current = null;
       if (mapRef.current) {
+        const c = mapRef.current.getCenter();
+        savedCenter = [c.lat, c.lng];
+        savedZoom = mapRef.current.getZoom();
         mapRef.current.remove();
         mapRef.current = null;
       }
@@ -149,31 +170,39 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
         maxBounds: [[-85, -Infinity], [85, Infinity]],
         worldCopyJump: true,
       }).setView(
-        [initialLat ?? 20, initialLon ?? 0],
-        initialLat != null ? 5 : 2
+        savedCenter ?? [initialLat ?? 20, initialLon ?? 0],
+        savedZoom ?? (initialLat != null ? 5 : 2)
       );
 
       if (cancelled) { map.remove(); return; }
 
-      // Tile providers: try CARTO (dark theme), fallback to OSM if unreachable
-      const CARTO_BASE = 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png';
-      const CARTO_LABELS = 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png';
+      // Tile providers: CARTO tiles (theme-aware), fallback to OSM if unreachable
+      const cartoStyle = theme === 'dark' ? 'dark' : 'light';
+      const CARTO_BASE = `https://{s}.basemaps.cartocdn.com/${cartoStyle}_nolabels/{z}/{x}/{y}{r}.png`;
+      const CARTO_LABELS = `https://{s}.basemaps.cartocdn.com/${cartoStyle}_only_labels/{z}/{x}/{y}{r}.png`;
       const OSM_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
-      // Probe CARTO availability with a small test tile (timeout 4s)
-      let useCarto = true;
-      try {
-        const probe = new AbortController();
-        const probeTimer = setTimeout(() => probe.abort(), 4000);
-        const res = await fetch('https://a.basemaps.cartocdn.com/dark_nolabels/0/0/0.png', {
-          signal: probe.signal,
-          mode: 'no-cors',
-        });
-        clearTimeout(probeTimer);
-        // mode: no-cors gives opaque response (status 0), but no error means reachable
-        if (res.type !== 'opaque' && !res.ok) useCarto = false;
-      } catch {
-        useCarto = false;
+      // Probe CARTO availability once per page session (timeout 4s).
+      // If it failed before, skip the probe and fall back to OSM directly.
+      let useCarto: boolean;
+      if (cartoProbeResult !== null) {
+        useCarto = cartoProbeResult;
+      } else {
+        useCarto = true;
+        try {
+          const probe = new AbortController();
+          const probeTimer = setTimeout(() => probe.abort(), 4000);
+          const res = await fetch(`https://a.basemaps.cartocdn.com/${cartoStyle}_nolabels/0/0/0.png`, {
+            signal: probe.signal,
+            mode: 'no-cors',
+          });
+          clearTimeout(probeTimer);
+          // mode: no-cors gives opaque response (status 0), but no error means reachable
+          if (res.type !== 'opaque' && !res.ok) useCarto = false;
+        } catch {
+          useCarto = false;
+        }
+        cartoProbeResult = useCarto;
       }
 
       if (cancelled) { map.remove(); return; }
@@ -194,13 +223,42 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
         labelTiles.once('load', onTileLayerReady);
         labelTiles.once('tileerror', onTileLayerReady);
       } else {
-        const osmTiles = L.tileLayer(OSM_URL, { maxZoom: 19, className: 'osm-dark-tiles' }).addTo(map);
+        const osmTiles = L.tileLayer(OSM_URL, { maxZoom: 19, className: theme === 'dark' ? 'osm-dark-tiles' : '' }).addTo(map);
         osmTiles.once('load', onTileLayerReady);
         osmTiles.once('tileerror', onTileLayerReady);
       }
 
       // Fallback: hide loading indicator after 10s even if tiles haven't loaded
       fallbackTimer = setTimeout(() => { if (!cancelled) setMapLoading(false); }, 10000);
+
+      // Add continent labels visible at low zoom levels
+      const continentMarkers: L.Marker[] = [];
+      CONTINENT_LABELS.forEach(({ name, lat, lon }) => {
+        const label = name[localeRef.current as keyof typeof name] || name.en;
+        const marker = L.marker([lat, lon], {
+          icon: L.divIcon({
+            html: `<div class="continent-label">${label}</div>`,
+            className: '',
+            iconSize: [150, 24],
+            iconAnchor: [75, 12],
+          }),
+          interactive: false,
+        });
+        continentMarkers.push(marker);
+      });
+
+      const updateContinentLabels = () => {
+        const zoom = map.getZoom();
+        continentMarkers.forEach(m => {
+          if (zoom <= 4) {
+            if (!map.hasLayer(m)) m.addTo(map);
+          } else {
+            if (map.hasLayer(m)) m.removeFrom(map);
+          }
+        });
+      };
+      updateContinentLabels();
+      map.on('zoomend', updateContinentLabels);
 
       L.control.zoom({ position: 'topright' }).addTo(map);
 
@@ -209,10 +267,12 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
       const icon = await createMarkerIcon();
       if (cancelled) { map.remove(); mapRef.current = null; return; }
 
-      if (initialLat != null && initialLon != null) {
-        markerRef.current = L.marker([initialLat, initialLon], { icon }).addTo(map);
+      const markerLat = selectedLat ?? initialLat;
+      const markerLon = selectedLon ?? initialLon;
+      if (markerLat != null && markerLon != null) {
+        markerRef.current = L.marker([markerLat, markerLon], { icon }).addTo(map);
         const seq = ++geocodeSeqRef.current;
-        reverseGeocode(initialLat, initialLon, localeRef.current).then(name => {
+        reverseGeocode(markerLat, markerLon, localeRef.current).then(name => {
           if (!cancelled && geocodeSeqRef.current === seq) setSelectedName(name);
         });
       }
@@ -241,12 +301,14 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
       cancelled = true;
       clearTimeout(fallbackTimer);
       if (mapRef.current) {
+        const c = mapRef.current.getCenter();
+        savedViewRef.current = { center: [c.lat, c.lng], zoom: mapRef.current.getZoom() };
         mapRef.current.remove();
         mapRef.current = null;
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [theme, locale]);
 
   const handleSearch = async () => {
     const q = searchQuery.trim();
@@ -308,9 +370,9 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
       />
 
       {/* Panel - side panel on desktop, fullscreen on mobile */}
-      <div className={`fixed z-[85] bg-slate-950/95 transition-all duration-300 ease-out
+      <div className={`fixed z-[85] bg-[var(--panel-bg)] transition-all duration-300 ease-out
         inset-0
-        md:inset-4 md:rounded-2xl md:shadow-[0_8px_60px_rgba(0,0,0,0.5)] md:border md:border-white/[0.08]
+        md:inset-4 md:rounded-2xl md:shadow-[var(--panel-shadow)] md:border md:border-[var(--panel-border)]
         ${entering ? 'opacity-0 md:scale-[0.97]' : 'opacity-100 md:scale-100'}
       `}>
         {/* Map fills the panel */}
@@ -318,18 +380,18 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
 
         {/* Loading indicator */}
         {mapLoading && (
-          <div className="absolute inset-0 z-[10] flex items-center justify-center bg-slate-950/60 md:rounded-2xl pointer-events-none">
+          <div className="absolute inset-0 z-[10] flex items-center justify-center bg-[var(--panel-bg)] md:rounded-2xl pointer-events-none">
             <div className="flex flex-col items-center gap-3">
-              <Loader2 size={28} className="text-white/50 animate-spin" />
-              <p className="text-[13px] text-white/40">{t('loading' as TranslationKey)}</p>
+              <Loader2 size={28} className="text-[var(--text-60)] animate-spin" />
+              <p className="text-[13px] text-[var(--text-40)]">{t('loading' as TranslationKey)}</p>
             </div>
           </div>
         )}
 
         {/* Search bar */}
         <div className={`absolute top-3 left-3 right-3 z-[20] transition-all duration-500 ${entering ? 'opacity-0 -translate-y-3' : 'opacity-100 translate-y-0'}`}>
-          <div className={`relative flex items-center bg-slate-900/90 backdrop-blur-2xl rounded-xl shadow-[0_4px_30px_rgba(0,0,0,0.4)] border transition-all duration-200 ${searchFocused ? 'border-white/15 shadow-[0_4px_30px_rgba(0,0,0,0.5)]' : 'border-white/[0.08]'}`}>
-            <div className="pl-3 pr-1 text-white/30">
+          <div className={`relative flex items-center bg-[var(--panel-bg)] backdrop-blur-2xl rounded-xl shadow-[var(--badge-shadow)] border transition-all duration-200 ${searchFocused ? 'border-[var(--border-active)] shadow-[var(--panel-shadow)]' : 'border-[var(--panel-border)]'}`}>
+            <div className="pl-3 pr-1 text-[var(--text-35)]">
               <Search size={15} />
             </div>
             <input
@@ -343,18 +405,18 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
               placeholder={t('searchPlaceholder' as TranslationKey)}
-              className="flex-1 h-10 px-2 bg-transparent text-[13px] text-white/80 placeholder-white/25 focus:outline-none"
+              className="flex-1 h-10 px-2 bg-transparent text-[13px] text-[var(--text-80)] placeholder-[var(--text-25)] focus:outline-none"
             />
             {searching && (
               <div className="pr-3">
-                <div className="w-4 h-4 border-2 border-white/10 border-t-white/50 rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-[var(--spinner-track)] border-t-[var(--spinner-head)] rounded-full animate-spin" />
               </div>
             )}
             {searchQuery && !searching && (
               <button
                 type="button"
                 onClick={() => { setSearchQuery(''); setSearchResults([]); }}
-                className="pr-3 text-white/25 hover:text-white/55 transition-colors"
+                className="pr-3 text-[var(--text-25)] hover:text-[var(--text-60)] transition-colors"
               >
                 <X size={14} />
               </button>
@@ -363,7 +425,7 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
             <button
               type="button"
               onClick={onClose}
-              className="mr-1.5 flex items-center justify-center w-7 h-7 rounded-lg text-white/30 hover:text-white/60 hover:bg-white/[0.06] transition-all md:hidden"
+              className="mr-1.5 flex items-center justify-center w-7 h-7 rounded-lg text-[var(--text-35)] hover:text-[var(--text-60)] hover:bg-[var(--surface-hover)] transition-all md:hidden"
             >
               <X size={14} />
             </button>
@@ -371,7 +433,7 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
             <button
               type="button"
               onClick={onClose}
-              className="mr-2 hidden md:flex items-center justify-center w-7 h-7 rounded-lg text-white/25 hover:text-white/55 hover:bg-white/[0.06] transition-all"
+              className="mr-2 hidden md:flex items-center justify-center w-7 h-7 rounded-lg text-[var(--text-25)] hover:text-[var(--text-60)] hover:bg-[var(--surface-hover)] transition-all"
             >
               <X size={14} />
             </button>
@@ -379,15 +441,15 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
 
           {/* Search results dropdown */}
           {showResults && (
-            <div className="mt-1.5 bg-slate-900/95 backdrop-blur-2xl rounded-xl shadow-[0_8px_40px_rgba(0,0,0,0.5)] border border-white/[0.08] overflow-hidden max-h-[50vh] overflow-y-auto">
+            <div className="mt-1.5 bg-[var(--dropdown-bg)] backdrop-blur-2xl rounded-xl shadow-[var(--panel-shadow)] border border-[var(--dropdown-border)] overflow-hidden max-h-[50vh] overflow-y-auto">
               {searchResults.map((result, i) => (
                 <button
                   key={i}
                   type="button"
                   onClick={() => handleSelectResult(result)}
-                  className="w-full text-left px-3 py-2.5 text-[13px] text-white/60 hover:bg-white/[0.06] hover:text-white/80 transition-colors flex items-start gap-2 border-b border-white/[0.04] last:border-b-0"
+                  className="w-full text-left px-3 py-2.5 text-[13px] text-[var(--text-60)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-80)] transition-colors flex items-start gap-2 border-b border-[var(--border)] last:border-b-0"
                 >
-                  <MapPin size={13} className="text-white/25 mt-0.5 shrink-0" />
+                  <MapPin size={13} className="text-[var(--text-25)] mt-0.5 shrink-0" />
                   <span className="line-clamp-2 leading-snug">{result.display_name}</span>
                 </button>
               ))}
@@ -398,16 +460,16 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
         {/* Bottom location card */}
         <div className={`absolute bottom-3 left-3 right-3 z-[20] transition-all duration-500 ${entering ? 'opacity-0 translate-y-3' : 'opacity-100 translate-y-0'}`}>
           {hasSelection ? (
-            <div className="bg-slate-900/90 backdrop-blur-2xl rounded-xl shadow-[0_4px_30px_rgba(0,0,0,0.4)] border border-white/[0.08] overflow-hidden">
+            <div className="bg-[var(--panel-bg)] backdrop-blur-2xl rounded-xl shadow-[var(--badge-shadow)] border border-[var(--panel-border)] overflow-hidden">
               <div className="flex items-center gap-3 p-3">
                 <div className="w-9 h-9 rounded-xl bg-blue-500/15 border border-blue-500/20 flex items-center justify-center shrink-0">
                   <MapPin size={18} className="text-blue-400" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-medium text-white/80 truncate">
+                  <p className="text-[13px] font-medium text-[var(--text-80)] truncate">
                     {selectedName || `${selectedLat!.toFixed(4)}, ${selectedLon!.toFixed(4)}`}
                   </p>
-                  <p className="text-[11px] text-white/30 mt-0.5">
+                  <p className="text-[11px] text-[var(--text-35)] mt-0.5">
                     {selectedLat!.toFixed(4)}°{selectedLat! >= 0 ? 'N' : 'S'}, {selectedLon!.toFixed(4)}°{selectedLon! >= 0 ? 'E' : 'W'}
                   </p>
                 </div>
@@ -422,8 +484,8 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
               </div>
             </div>
           ) : (
-            <div className="bg-slate-900/70 backdrop-blur-2xl rounded-xl shadow-[0_2px_16px_rgba(0,0,0,0.3)] border border-white/[0.06] text-center py-2.5 px-3">
-              <p className="text-[12px] text-white/30">{t('clickMapHint' as TranslationKey)}</p>
+            <div className="bg-[var(--panel-bg)] backdrop-blur-2xl rounded-xl shadow-[var(--badge-shadow)] border border-[var(--border)] text-center py-2.5 px-3">
+              <p className="text-[12px] text-[var(--text-35)]">{t('clickMapHint' as TranslationKey)}</p>
             </div>
           )}
         </div>
@@ -463,12 +525,24 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
             100% { transform: scale(2.2); opacity: 0; }
           }
           .leaflet-container {
-            background: #0f172a !important;
+            background: var(--background) !important;
             font-family: inherit;
             z-index: 0 !important;
           }
           .osm-dark-tiles {
             filter: invert(1) hue-rotate(180deg) brightness(0.8) contrast(1.1) saturate(0.3);
+          }
+          .continent-label {
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            color: var(--text-40);
+            text-shadow: 0 1px 3px rgba(0,0,0,0.15);
+            white-space: nowrap;
+            text-align: center;
+            pointer-events: none;
+            user-select: none;
           }
           .leaflet-pane {
             z-index: 1 !important;
@@ -507,18 +581,18 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
             height: 32px !important;
             line-height: 32px !important;
             font-size: 15px !important;
-            color: rgba(255,255,255,0.6) !important;
-            background: rgba(15,23,42,0.85) !important;
+            color: var(--text-60) !important;
+            background: var(--panel-bg) !important;
             backdrop-filter: blur(12px);
             border: none !important;
-            border-bottom: 1px solid rgba(255,255,255,0.06) !important;
+            border-bottom: 1px solid var(--divider) !important;
           }
           .leaflet-control-zoom a:last-child {
             border-bottom: none !important;
           }
           .leaflet-control-zoom a:hover {
-            background: rgba(15,23,42,0.95) !important;
-            color: rgba(255,255,255,0.9) !important;
+            background: var(--badge-hover) !important;
+            color: var(--text-90) !important;
           }
         `}</style>
       </div>

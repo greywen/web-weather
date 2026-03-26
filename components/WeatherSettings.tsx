@@ -3,9 +3,9 @@
 import { useState, useRef, useCallback, useEffect, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import {
-    Sun, CloudRain, Snowflake, Cloud, CloudFog, CloudHail, Wind,
+    Sun, Moon, CloudRain, Snowflake, Cloud, CloudFog, CloudHail, Wind,
     MapPin, Search, Volume2, VolumeX, Maximize2, Minimize2,
-    Clock, Github, X, ChevronDown, ChevronUp,
+    Clock, Github, X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
     Zap, Droplets, Thermometer, Eye, Globe,
     LocateFixed, RefreshCw, SlidersHorizontal,
 } from 'lucide-react';
@@ -74,14 +74,14 @@ function Slider({ icon, label, value, min, max, step, current, onChange, accent,
     return (
         <div>
             <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5">{icon}<span className="text-[11px] text-white/60">{label}</span></div>
-                <span className="text-[11px] font-mono text-white/40">{value}</span>
+                <div className="flex items-center gap-1.5">{icon}<span className="text-[13px] text-[var(--text-60)]">{label}</span></div>
+                <span className="text-[13px] font-mono text-[var(--text-40)]">{value}</span>
             </div>
             <input type="range" min={min} max={max} step={step} value={current}
                 onChange={(e) => onChange(parseFloat(e.target.value))}
-                className={`w-full h-1 bg-white/10 rounded-full appearance-none cursor-pointer ${accent ?? 'accent-blue-500'}`} />
+                className={`w-full h-1 bg-[var(--slider-track)] rounded-full appearance-none cursor-pointer ${accent ?? 'accent-blue-500'}`} />
             {(leftHint || rightHint) && (
-                <div className="flex justify-between text-[9px] text-white/20 mt-1">
+                <div className="flex justify-between text-[11px] text-[var(--text-20)] mt-1">
                     <span>{leftHint}</span><span>{rightHint}</span>
                 </div>
             )}
@@ -94,8 +94,8 @@ function Toggle({ checked, onChange, activeColor = 'bg-blue-500/60' }: {
 }) {
     return (
         <button type="button" onClick={onChange}
-            className={`w-8 h-[18px] rounded-full transition-all relative shrink-0 ${checked ? activeColor : 'bg-white/10'}`}>
-            <span className={`absolute top-[2px] w-[14px] h-[14px] rounded-full transition-all ${checked ? 'left-[16px] bg-white' : 'left-[2px] bg-white/40'}`} />
+            className={`w-8 h-[18px] rounded-full transition-all relative shrink-0 ${checked ? activeColor : 'bg-[var(--toggle-off)]'}`}>
+            <span className={`absolute top-[2px] w-[14px] h-[14px] rounded-full transition-all ${checked ? 'left-[16px] bg-[var(--toggle-knob-on)]' : 'left-[2px] bg-[var(--toggle-knob-off)]'}`} />
         </button>
     );
 }
@@ -105,7 +105,7 @@ function ToolbarBtn({ icon, active, onClick, title, activeClass }: {
 }) {
     return (
         <button type="button" onClick={onClick} title={title}
-            className={`p-2 rounded-xl transition-all ${active ? (activeClass ?? 'bg-blue-500/20 text-blue-400') : 'text-white/35 hover:text-white/60 hover:bg-white/[0.06]'}`}>
+            className={`p-2 rounded-xl transition-all ${active ? (activeClass ?? 'bg-blue-500/20 text-blue-400') : 'text-[var(--text-35)] hover:text-[var(--text-60)] hover:bg-[var(--surface-hover)]'}`}>
             {icon}
         </button>
     );
@@ -119,7 +119,7 @@ export default function WeatherSettings() {
         isAuto, isLocating, toggleAuto, soundEnabled, setSoundEnabled,
         immersive, setImmersive, lastUpdated, setLocation, customCoords, weatherData,
     } = useWeather();
-    const { t, locale, setLocale, temperatureUnit, setTemperatureUnit } = useI18n();
+    const { t, locale, setLocale, temperatureUnit, setTemperatureUnit, theme, setTheme } = useI18n();
 
     const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
     const [menuOpen, setMenuOpen] = useState(false);
@@ -132,6 +132,7 @@ export default function WeatherSettings() {
     const [forecastOpen, setForecastOpen] = useState(() => readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.forecastOpen) !== 'off');
 
     const searchRef = useRef<HTMLInputElement>(null);
+    const weatherTypeScrollRef = useRef<HTMLDivElement>(null);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const abortRef = useRef<AbortController | null>(null);
 
@@ -169,14 +170,25 @@ export default function WeatherSettings() {
         setSearchOpen(false);
     };
 
+    const scrollWeatherTypes = (direction: 'left' | 'right') => {
+        const el = weatherTypeScrollRef.current;
+        if (!el) return;
+        const offset = Math.round(el.clientWidth * 0.7);
+        el.scrollBy({
+            left: direction === 'right' ? offset : -offset,
+            behavior: 'smooth',
+        });
+    };
+
     /* helpers */
     const set = (key: keyof WeatherConfig, v: number | boolean) => setConfig({ [key]: v });
     const panelVisible = immersive ? menuOpen : isOpen;
     const WeatherIcon = weatherIconMap[weather];
-    const locName = weatherData?.locationName
-        || (customCoords ? `${customCoords.lat.toFixed(2)}, ${customCoords.lon.toFixed(2)}` : '');
+    const locName = weatherData?.locationName || (isAuto ? t('unknownLocation' as TranslationKey) : '');
+    const coordsText = customCoords ? `${customCoords.lat.toFixed(4)}, ${customCoords.lon.toFixed(4)}` : '';
     const temp = weatherData?.temperature;
     const feelsLike = weatherData?.apparentTemperature;
+    const autoLoading = isAuto && (!weatherData || !weatherData.locationName);
 
     return (
         <>
@@ -184,18 +196,22 @@ export default function WeatherSettings() {
             {!panelVisible && (
                 <button type="button"
                     onClick={() => immersive ? setMenuOpen(true) : setIsOpen(true)}
-                    className="fixed top-4 left-4 z-[70] flex items-center gap-2.5 rounded-2xl bg-slate-900/80 backdrop-blur-xl text-white pl-3 pr-4 py-2.5 border border-white/[0.08] hover:bg-slate-900/95 hover:border-white/[0.15] transition-all cursor-pointer shadow-[0_4px_30px_rgba(0,0,0,0.4)] group"
+                    className="fixed top-4 left-4 z-[70] flex items-center gap-2.5 rounded-2xl bg-[var(--badge-bg)] backdrop-blur-xl text-[var(--text-primary)] pl-3 pr-4 py-2.5 border border-[var(--badge-border)] hover:bg-[var(--badge-hover)] hover:border-[var(--border-hover)] transition-all cursor-pointer shadow-[var(--badge-shadow)] group"
                 >
                     <div className={`p-1.5 rounded-lg border ${weatherChip[weather]} shadow-lg`}>
                         <WeatherIcon size={15} className={weatherAccent[weather]} />
                     </div>
-                    <span className="text-[13px] font-medium truncate max-w-[140px]">
-                        {locName ? locName.split(',')[0] : t(weather as TranslationKey)}
+                    <span className="text-sm font-medium truncate max-w-[140px]">
+                        {autoLoading ? (
+                            <span className="inline-block h-[16px] w-16 rounded bg-[var(--surface)] animate-pulse align-middle" />
+                        ) : (
+                            isAuto && locName ? locName.split(',')[0] : t(weather as TranslationKey)
+                        )}
                     </span>
-                    {temp != null && (
+                    {isAuto && !autoLoading && temp != null && (
                         <>
-                            <span className="text-white/20">·</span>
-                            <span className="text-[13px] text-white/70 font-semibold">{formatTemp(temp, temperatureUnit)}</span>
+                            <span className="text-[var(--text-20)]">·</span>
+                            <span className="text-sm text-[var(--text-70)] font-semibold">{formatTemp(temp, temperatureUnit)}</span>
                         </>
                     )}
                     {isAuto && <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse ml-0.5" />}
@@ -210,7 +226,7 @@ export default function WeatherSettings() {
                     ? 'opacity-100 translate-y-0 pointer-events-auto'
                     : 'opacity-0 -translate-y-4 pointer-events-none scale-[0.97]'}`}>
 
-                <div className="bg-slate-900/90 backdrop-blur-2xl border border-white/[0.08] rounded-2xl shadow-[0_8px_60px_rgba(0,0,0,0.5)] overflow-hidden">
+                <div className="bg-[var(--panel-bg)] backdrop-blur-2xl border border-[var(--panel-border)] rounded-2xl shadow-[var(--panel-shadow)] overflow-hidden">
                     <div className="max-h-[80vh] overflow-y-auto overflow-x-hidden settings-scroll">
 
                         {/* ─── Section: Location header ─────────── */}
@@ -222,39 +238,71 @@ export default function WeatherSettings() {
                                     </div>
                                     <div className="min-w-0 pt-0.5">
                                         <div className="flex items-center gap-2 flex-wrap">
-                                            <h2 className="text-sm font-semibold text-white truncate max-w-[160px]">
-                                                {locName ? locName.split(',')[0] : t(weather as TranslationKey)}
-                                            </h2>
-                                            {isAuto && (
-                                                <span className="text-[8px] font-bold text-green-400 bg-green-500/15 px-1.5 py-0.5 rounded-full border border-green-500/20 uppercase tracking-widest shrink-0">
+                                            {autoLoading ? (
+                                                <div className="h-[20px] w-24 rounded bg-[var(--surface)] animate-pulse" />
+                                            ) : (
+                                                <h2 className="text-[15px] font-semibold text-[var(--text-primary)] truncate max-w-[160px]">
+                                                    {isAuto && locName ? locName.split(',')[0] : t(weather as TranslationKey)}
+                                                </h2>
+                                            )}
+                                            {isAuto ? (
+                                                <span className="text-[10px] font-bold text-green-400 bg-green-500/15 px-1.5 py-0.5 rounded-full border border-green-500/20 uppercase tracking-widest shrink-0">
                                                     {t('auto')}
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] font-bold text-[var(--text-35)] bg-[var(--surface)] px-1.5 py-0.5 rounded-full border border-[var(--border)] uppercase tracking-widest shrink-0">
+                                                    {t('manual')}
                                                 </span>
                                             )}
                                         </div>
-                                        {locName.includes(',') && (
-                                            <p className="text-[11px] text-white/35 truncate mt-0.5">
-                                                {locName.split(',').slice(1).join(',').trim()}
+                                        {isAuto ? (
+                                            autoLoading ? (
+                                                <div className="mt-1.5 space-y-1.5">
+                                                    <div className="h-[14px] w-36 rounded bg-[var(--surface)] animate-pulse" />
+                                                    <div className="h-[13px] w-28 rounded bg-[var(--surface)] animate-pulse" />
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <div className="h-[24px] w-12 rounded bg-[var(--surface)] animate-pulse" />
+                                                        <div className="h-[16px] w-10 rounded bg-[var(--surface)] animate-pulse" />
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    {locName.includes(',') && (
+                                                        <p className="text-[13px] text-[var(--text-35)] truncate mt-0.5">
+                                                            {locName.split(',').slice(1).join(',').trim()}
+                                                        </p>
+                                                    )}
+                                                    {coordsText && (
+                                                        <p className="text-xs text-[var(--text-25)] font-mono truncate mt-0.5">
+                                                            {coordsText}
+                                                        </p>
+                                                    )}
+                                                    <div className="flex items-center gap-2 mt-1.5">
+                                                        {temp != null && (
+                                                            <span className="text-xl font-bold text-[var(--text-primary)] leading-none">{formatTemp(temp, temperatureUnit)}</span>
+                                                        )}
+                                                        <span className={`text-[13px] font-medium ${weatherAccent[weather]}`}>{t(weather as TranslationKey)}</span>
+                                                        {feelsLike != null && temp != null && (
+                                                            <span className="text-xs text-[var(--text-25)]">{t('feelsLike')} {formatTemp(feelsLike, temperatureUnit)}</span>
+                                                        )}
+                                                    </div>
+                                                    {lastUpdated && (
+                                                        <span className="text-[11px] text-[var(--text-20)] mt-1 block">
+                                                            {t('lastUpdated')} {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        </span>
+                                                    )}
+                                                </>
+                                            )
+                                        ) : (
+                                            <p className="text-[13px] text-[var(--text-35)] mt-1">
+                                                {t('weatherModeDesc')}
                                             </p>
-                                        )}
-                                        <div className="flex items-center gap-2 mt-1.5">
-                                            {temp != null && (
-                                                <span className="text-xl font-bold text-white leading-none">{formatTemp(temp, temperatureUnit)}</span>
-                                            )}
-                                            <span className={`text-xs font-medium ${weatherAccent[weather]}`}>{t(weather as TranslationKey)}</span>
-                                            {feelsLike != null && temp != null && (
-                                                <span className="text-[10px] text-white/25">{t('feelsLike')} {formatTemp(feelsLike, temperatureUnit)}</span>
-                                            )}
-                                        </div>
-                                        {isAuto && lastUpdated && (
-                                            <span className="text-[9px] text-white/20 mt-1 block">
-                                                {t('lastUpdated')} {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                            </span>
                                         )}
                                     </div>
                                 </div>
                                 <button type="button"
                                     onClick={() => immersive ? setMenuOpen(false) : setIsOpen(false)}
-                                    className="p-1.5 rounded-lg text-white/25 hover:text-white/60 hover:bg-white/5 transition-all shrink-0">
+                                    className="p-1.5 rounded-lg text-[var(--text-25)] hover:text-[var(--text-60)] hover:bg-[var(--surface-hover)] transition-all shrink-0">
                                     <X size={16} />
                                 </button>
                             </div>
@@ -263,35 +311,35 @@ export default function WeatherSettings() {
                             <div className="relative">
                                 <div className={`flex items-center gap-2 rounded-xl border transition-all cursor-text
                                     ${searchOpen
-                                        ? 'bg-white/10 border-white/15'
-                                        : 'bg-white/[0.04] border-white/[0.06] hover:bg-white/[0.07] hover:border-white/10'}`}
+                                        ? 'bg-[var(--surface-active)] border-[var(--border-active)]'
+                                        : 'bg-[var(--surface)] border-[var(--border)] hover:bg-[var(--surface-hover)] hover:border-[var(--border-hover)]'}`}
                                     onClick={() => { setSearchOpen(true); searchRef.current?.focus(); }}>
-                                    <div className="pl-3 text-white/25"><Search size={14} /></div>
+                                    <div className="pl-3 text-[var(--text-25)]"><Search size={14} /></div>
                                     <input ref={searchRef} type="text" value={searchQuery}
                                         onChange={(e) => handleSearchInput(e.target.value)}
                                         onFocus={() => setSearchOpen(true)}
                                         onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
                                         placeholder={t('searchPlaceholder' as TranslationKey)}
-                                        className="flex-1 h-9 bg-transparent text-xs text-white/80 placeholder-white/20 focus:outline-none" />
+                                        className="flex-1 h-9 bg-transparent text-[13px] text-[var(--text-80)] placeholder-[var(--text-20)] focus:outline-none" />
                                     {searching && (
-                                        <div className="pr-3"><div className="w-3.5 h-3.5 border-2 border-white/10 border-t-white/40 rounded-full animate-spin" /></div>
+                                        <div className="pr-3"><div className="w-3.5 h-3.5 border-2 border-[var(--spinner-track)] border-t-[var(--spinner-head)] rounded-full animate-spin" /></div>
                                     )}
                                     <button type="button"
                                         onClick={(e) => { e.stopPropagation(); setMapOpen(true); }}
-                                        className="flex items-center gap-1 px-2.5 py-1.5 mr-1.5 rounded-lg text-[10px] font-medium text-white/35 hover:text-white/70 hover:bg-white/[0.06] transition-all"
+                                        className="flex items-center gap-1 px-2.5 py-1.5 mr-1.5 rounded-lg text-xs font-medium text-[var(--text-35)] hover:text-[var(--text-70)] hover:bg-[var(--surface-hover)] transition-all whitespace-nowrap shrink-0"
                                         title={t('worldMap' as TranslationKey)}>
                                         <Globe size={13} />
-                                        <span className="hidden sm:inline">{t('worldMap' as TranslationKey)}</span>
+                                        <span>{t('worldMap' as TranslationKey)}</span>
                                     </button>
                                 </div>
 
                                 {/* search results dropdown */}
                                 {searchOpen && searchResults.length > 0 && (
-                                    <div className="absolute top-full left-0 right-0 mt-1.5 bg-slate-800/95 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl overflow-hidden z-10 max-h-[200px] overflow-y-auto">
+                                    <div className="absolute top-full left-0 right-0 mt-1.5 bg-[var(--dropdown-bg)] backdrop-blur-xl rounded-xl border border-[var(--dropdown-border)] shadow-2xl overflow-hidden z-10 max-h-[200px] overflow-y-auto">
                                         {searchResults.map((r, i) => (
                                             <button key={i} type="button" onClick={() => selectResult(r)}
-                                                className="w-full text-left px-3 py-2.5 text-xs text-white/70 hover:bg-white/[0.06] transition-colors flex items-start gap-2 border-b border-white/[0.04] last:border-b-0">
-                                                <MapPin size={12} className="text-white/25 mt-0.5 shrink-0" />
+                                                className="w-full text-left px-3 py-2.5 text-[13px] text-[var(--text-70)] hover:bg-[var(--surface-hover)] transition-colors flex items-start gap-2 border-b border-[var(--border)] last:border-b-0">
+                                                <MapPin size={12} className="text-[var(--text-25)] mt-0.5 shrink-0" />
                                                 <span className="line-clamp-2 leading-snug">{r.display_name}</span>
                                             </button>
                                         ))}
@@ -300,33 +348,54 @@ export default function WeatherSettings() {
                             </div>
                         </div>
 
-                        <div className="h-px bg-white/[0.06] mx-4" />
+                        <div className="h-px bg-[var(--divider)] mx-4" />
 
                         {/* ─── Section: Weather type selector ───── */}
                         <div className="py-3">
-                            <div className="grid grid-cols-4 gap-1 px-4 sm:grid-cols-7">
-                                {displayTypes.map((wt) => {
-                                    const Icon = weatherIconMap[wt];
-                                    const active = weather === wt;
-                                    return (
-                                        <button key={wt}
-                                            onClick={() => setWeather(wt)}
-                                            title={t(wt as TranslationKey)}
-                                            className={`flex w-full min-w-0 flex-col items-center gap-1 rounded-xl px-1.5 py-2 transition-all
-                                                ${active
-                                                    ? `${weatherChip[wt]} border shadow-lg`
-                                                    : 'border border-transparent hover:bg-white/[0.04] hover:border-white/[0.06]'}`}>
-                                            <Icon size={17} className={active ? weatherAccent[wt] : 'text-white/35'} />
-                                            <span className={`block w-full truncate text-center text-[8px] font-medium leading-none ${active ? 'text-white/90' : 'text-white/25'}`}>
-                                                {t(wt as TranslationKey)}
-                                            </span>
-                                        </button>
-                                    );
-                                })}
+                            <div className="flex items-center gap-1 px-3">
+                                <button
+                                    type="button"
+                                    onClick={() => scrollWeatherTypes('left')}
+                                    aria-label="Scroll weather types left"
+                                    className="p-1.5 rounded-lg text-[var(--text-25)] hover:text-[var(--text-60)] hover:bg-[var(--surface-hover)] transition-colors shrink-0"
+                                >
+                                    <ChevronLeft size={14} />
+                                </button>
+                                <div
+                                    ref={weatherTypeScrollRef}
+                                    className="flex-1 flex gap-1 overflow-x-auto scrollbar-none"
+                                >
+                                    {displayTypes.map((wt) => {
+                                        const Icon = weatherIconMap[wt];
+                                        const active = weather === wt;
+                                        return (
+                                            <button key={wt}
+                                                onClick={() => setWeather(wt)}
+                                                title={t(wt as TranslationKey)}
+                                                className={`flex flex-col items-center gap-1 rounded-xl px-3 py-2 transition-all shrink-0
+                                                    ${active
+                                                        ? `${weatherChip[wt]} border shadow-lg`
+                                                        : 'border border-transparent hover:bg-[var(--surface)] hover:border-[var(--border)]'}`}>
+                                                <Icon size={17} className={active ? weatherAccent[wt] : 'text-[var(--text-35)]'} />
+                                                <span className={`whitespace-nowrap text-[10px] font-medium leading-none ${active ? 'text-[var(--text-90)]' : 'text-[var(--text-25)]'}`}>
+                                                    {t(wt as TranslationKey)}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => scrollWeatherTypes('right')}
+                                    aria-label="Scroll weather types right"
+                                    className="p-1.5 rounded-lg text-[var(--text-25)] hover:text-[var(--text-60)] hover:bg-[var(--surface-hover)] transition-colors shrink-0"
+                                >
+                                    <ChevronRight size={14} />
+                                </button>
                             </div>
                         </div>
 
-                        <div className="h-px bg-white/[0.06] mx-4" />
+                        <div className="h-px bg-[var(--divider)] mx-4" />
 
                         {/* ─── Section: Forecast ──────────────────── */}
                         <div className="px-4 py-3">
@@ -339,7 +408,7 @@ export default function WeatherSettings() {
                             }} />
                         </div>
 
-                        <div className="h-px bg-white/[0.06] mx-4" />
+                        <div className="h-px bg-[var(--divider)] mx-4" />
 
                         {/* ─── Section: Parameters ────────────────── */}
                         <div className="px-4 py-3">
@@ -352,27 +421,27 @@ export default function WeatherSettings() {
                             }}
                                 className="flex items-center justify-between w-full group mb-1">
                                 <div className="flex items-center gap-1.5">
-                                    <SlidersHorizontal size={11} className="text-white/30" />
-                                    <span className="text-[10px] font-bold text-white/35 uppercase tracking-widest group-hover:text-white/55 transition-colors">
+                                    <SlidersHorizontal size={11} className="text-[var(--text-35)]" />
+                                    <span className="text-xs font-bold text-[var(--text-35)] uppercase tracking-widest group-hover:text-[var(--text-60)] transition-colors">
                                         {t('parameters')}
                                     </span>
                                 </div>
                                 {paramsOpen
-                                    ? <ChevronUp size={12} className="text-white/25" />
-                                    : <ChevronDown size={12} className="text-white/25" />}
+                                    ? <ChevronUp size={12} className="text-[var(--text-25)]" />
+                                    : <ChevronDown size={12} className="text-[var(--text-25)]" />}
                             </button>
 
                             {paramsOpen && (
                                 <div className="space-y-4 mt-3">
                                     {/* Time */}
-                                    <Slider icon={<Clock size={12} className="text-white/40" />}
+                                    <Slider icon={<Clock size={12} className="text-[var(--text-40)]" />}
                                         label={t('time24h')}
                                         value={`${Math.floor(config.time || 12).toString().padStart(2, '0')}:${Math.floor(((config.time || 12) % 1) * 60).toString().padStart(2, '0')}`}
                                         min={0} max={24} step={0.1} current={config.time ?? 12}
                                         onChange={(v) => set('time', v)} />
 
                                     {/* Transition */}
-                                    <Slider icon={<RefreshCw size={12} className="text-white/40" />}
+                                    <Slider icon={<RefreshCw size={12} className="text-[var(--text-40)]" />}
                                         label={t('transitionDuration')}
                                         value={`${transition.duration.toFixed(1)}s`}
                                         min={0.5} max={8} step={0.1} current={transition.duration}
@@ -399,11 +468,11 @@ export default function WeatherSettings() {
                                             label={weather === 'rainy' ? t('rainfall') : t('snowfall')} value={String(config.particleCount)}
                                             min={0} max={500} step={10} current={config.particleCount}
                                             onChange={(v) => set('particleCount', v)} />
-                                        <Slider icon={<CloudRain size={12} className="text-white/40" />}
+                                        <Slider icon={<CloudRain size={12} className="text-[var(--text-40)]" />}
                                             label={t('fallSpeed')} value={`${config.speed.toFixed(1)}x`}
                                             min={0.5} max={3} step={0.1} current={config.speed}
                                             onChange={(v) => set('speed', v)} />
-                                        <Slider icon={<Wind size={12} className="text-white/40" />}
+                                        <Slider icon={<Wind size={12} className="text-[var(--text-40)]" />}
                                             label={t('wind')} value={config.wind.toFixed(1)}
                                             min={-3} max={3} step={0.1} current={config.wind}
                                             onChange={(v) => set('wind', v)}
@@ -412,7 +481,7 @@ export default function WeatherSettings() {
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-1.5">
                                                     <Zap size={12} className="text-yellow-400/60" />
-                                                    <span className="text-[11px] text-white/60">{t('thunder')}</span>
+                                                    <span className="text-[13px] text-[var(--text-60)]">{t('thunder')}</span>
                                                 </div>
                                                 <Toggle checked={!!config.thunder} onChange={() => set('thunder', !config.thunder)} activeColor="bg-yellow-500/50" />
                                             </div>
@@ -432,7 +501,7 @@ export default function WeatherSettings() {
                                             label={t('cloudCover')} value={`${((config.cloudCover ?? 0.1) * 100).toFixed(0)}%`}
                                             min={0} max={1} step={0.1} current={config.cloudCover ?? 0.1}
                                             onChange={(v) => set('cloudCover', v)} />
-                                        <Slider icon={<Wind size={12} className="text-white/40" />}
+                                        <Slider icon={<Wind size={12} className="text-[var(--text-40)]" />}
                                             label={t('moveSpeed')} value={`${config.speed.toFixed(1)}x`}
                                             min={0} max={5} step={0.1} current={config.speed}
                                             onChange={(v) => set('speed', v)} />
@@ -460,11 +529,11 @@ export default function WeatherSettings() {
                                             label={t('hailCount')} value={String(config.hailCount ?? 30)}
                                             min={10} max={150} step={5} current={config.hailCount ?? 30}
                                             onChange={(v) => set('hailCount', v)} />
-                                        <Slider icon={<CloudRain size={12} className="text-white/40" />}
+                                        <Slider icon={<CloudRain size={12} className="text-[var(--text-40)]" />}
                                             label={t('fallSpeed')} value={`${config.speed.toFixed(1)}x`}
                                             min={0.5} max={3} step={0.1} current={config.speed}
                                             onChange={(v) => set('speed', v)} />
-                                        <Slider icon={<Wind size={12} className="text-white/40" />}
+                                        <Slider icon={<Wind size={12} className="text-[var(--text-40)]" />}
                                             label={t('wind')} value={config.wind.toFixed(1)}
                                             min={-3} max={3} step={0.1} current={config.wind}
                                             onChange={(v) => set('wind', v)}
@@ -472,7 +541,7 @@ export default function WeatherSettings() {
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-1.5">
                                                 <Zap size={12} className="text-yellow-400/60" />
-                                                <span className="text-[11px] text-white/60">{t('thunder')}</span>
+                                                <span className="text-[13px] text-[var(--text-60)]">{t('thunder')}</span>
                                             </div>
                                             <Toggle checked={!!config.thunder} onChange={() => set('thunder', !config.thunder)} activeColor="bg-yellow-500/50" />
                                         </div>
@@ -484,7 +553,7 @@ export default function WeatherSettings() {
                                             label={t('sandDensity')} value={`${((config.sandDensity ?? 0.6) * 100).toFixed(0)}%`}
                                             min={0} max={1} step={0.05} current={config.sandDensity ?? 0.6}
                                             onChange={(v) => set('sandDensity', v)} accent="accent-orange-500" />
-                                        <Slider icon={<Wind size={12} className="text-white/40" />}
+                                        <Slider icon={<Wind size={12} className="text-[var(--text-40)]" />}
                                             label={t('wind')} value={config.wind.toFixed(1)}
                                             min={-3} max={3} step={0.1} current={config.wind}
                                             onChange={(v) => set('wind', v)}
@@ -496,7 +565,7 @@ export default function WeatherSettings() {
 
                         {/* ─── Section: Bottom toolbar ────────────── */}
                         <div className="px-4 pt-1 pb-3">
-                            <div className="h-px bg-white/[0.06] mb-2" />
+                            <div className="h-px bg-[var(--divider)] mb-2" />
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-0.5">
                                     <ToolbarBtn icon={soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
@@ -510,18 +579,21 @@ export default function WeatherSettings() {
                                         activeClass="bg-green-500/20 text-green-400" />
                                 </div>
                                 <div className="flex items-center gap-0.5">
+                                    <ToolbarBtn icon={theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
+                                        onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+                                        title={t('theme' as TranslationKey)} />
                                     <button type="button" onClick={() => setTemperatureUnit(temperatureUnit === '°C' ? '°F' : '°C')}
-                                        className="px-2 py-1.5 rounded-xl text-[10px] font-bold text-white/35 hover:text-white/65 hover:bg-white/[0.05] transition-all"
+                                        className="px-2 py-1.5 rounded-xl text-xs font-bold text-[var(--text-35)] hover:text-[var(--text-70)] hover:bg-[var(--surface-hover)] transition-all"
                                         title={t('temperatureUnit')}>
                                         {temperatureUnit}
                                     </button>
                                     <button type="button" onClick={() => setLocale(locale === 'en' ? 'zh' : 'en')}
-                                        className="px-2 py-1.5 rounded-xl text-[10px] font-bold text-white/35 hover:text-white/65 hover:bg-white/[0.05] transition-all"
+                                        className="px-2 py-1.5 rounded-xl text-xs font-bold text-[var(--text-35)] hover:text-[var(--text-70)] hover:bg-[var(--surface-hover)] transition-all"
                                         title={t('language')}>
                                         {locale === 'en' ? '中' : 'EN'}
                                     </button>
                                     <a href="https://github.com/greywen/web-weather" target="_blank" rel="noopener noreferrer"
-                                        className="p-2 rounded-xl text-white/25 hover:text-white/55 hover:bg-white/[0.05] transition-all"
+                                        className="p-2 rounded-xl text-[var(--text-25)] hover:text-[var(--text-60)] hover:bg-[var(--surface-hover)] transition-all"
                                         title="GitHub">
                                         <Github size={15} />
                                     </a>

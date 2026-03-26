@@ -64,10 +64,10 @@ function HourlyTimeline({ data }: { data: HourlyForecast[] }) {
                     <div
                         key={hour.time}
                         className={`flex flex-col items-center flex-shrink-0 w-[52px] py-2 px-1 rounded-lg transition-colors
-                            ${isCurrent ? 'bg-blue-500/30 ring-1 ring-blue-400/50' : 'hover:bg-white/5'}`}
+                            ${isCurrent ? 'bg-blue-500/30 ring-1 ring-blue-400/50' : 'hover:bg-[var(--surface-hover)]'}`}
                     >
                         {/* Time */}
-                        <span className={`text-[10px] font-mono ${isCurrent ? 'text-blue-300 font-bold' : 'text-white/40'}`}>
+                        <span className={`text-xs font-mono ${isCurrent ? 'text-blue-300 font-bold' : 'text-[var(--text-40)]'}`}>
                             {isCurrent ? t('now') : formatHour(hour.time)}
                         </span>
 
@@ -75,12 +75,12 @@ function HourlyTimeline({ data }: { data: HourlyForecast[] }) {
                         <span className="text-base my-1">{weatherIcon[hour.type]}</span>
 
                         {/* Temperature */}
-                        <span className={`text-xs font-semibold ${isCurrent ? 'text-white' : 'text-white/80'}`}>
+                        <span className={`text-[13px] font-semibold ${isCurrent ? 'text-[var(--text-primary)]' : 'text-[var(--text-80)]'}`}>
                             {formatTemp(hour.temperature, temperatureUnit)}
                         </span>
 
                         {/* Temp bar */}
-                        <div className="w-1 bg-white/10 rounded-full mt-1.5 overflow-hidden" style={{ height: '32px' }}>
+                        <div className="w-1 bg-[var(--slider-track)] rounded-full mt-1.5 overflow-hidden" style={{ height: '32px' }}>
                             <div
                                 className="w-full rounded-full transition-all"
                                 style={{
@@ -96,7 +96,7 @@ function HourlyTimeline({ data }: { data: HourlyForecast[] }) {
 
                         {/* Precipitation */}
                         {hour.precipitation > 0 && (
-                            <span className="text-[9px] text-blue-300/70 mt-1 font-mono">
+                            <span className="text-[11px] text-blue-300/70 mt-1 font-mono">
                                 {hour.precipitation.toFixed(1)}
                             </span>
                         )}
@@ -127,10 +127,10 @@ function DailyTimeline({ data }: { data: DailyForecast[] }) {
                     <div
                         key={day.date}
                         className={`flex items-center gap-1.5 py-1.5 px-1.5 rounded-lg transition-colors
-                            ${isToday ? 'bg-blue-500/20 ring-1 ring-blue-400/30' : 'hover:bg-white/5'}`}
+                            ${isToday ? 'bg-blue-500/20 ring-1 ring-blue-400/30' : 'hover:bg-[var(--surface-hover)]'}`}
                     >
                         {/* Day name */}
-                        <span className={`text-[10px] w-11 whitespace-nowrap flex-shrink-0 ${isToday ? 'text-blue-300 font-bold' : 'text-white/60'}`}>
+                        <span className={`text-xs w-11 whitespace-nowrap flex-shrink-0 ${isToday ? 'text-blue-300 font-bold' : 'text-[var(--text-60)]'}`}>
                             {formatDate(day.date, t)}
                         </span>
 
@@ -138,12 +138,12 @@ function DailyTimeline({ data }: { data: DailyForecast[] }) {
                         <span className="text-sm flex-shrink-0">{weatherIcon[day.type]}</span>
 
                         {/* Low temp */}
-                        <span className="text-[10px] text-white/40 w-8 text-right flex-shrink-0 font-mono">
+                        <span className="text-xs text-[var(--text-40)] w-8 text-right flex-shrink-0 font-mono">
                             {formatTemp(day.temperatureMin, temperatureUnit)}
                         </span>
 
                         {/* Temperature range bar */}
-                        <div className="flex-1 h-1 bg-white/10 rounded-full relative min-w-[40px]">
+                        <div className="flex-1 h-1 bg-[var(--slider-track)] rounded-full relative min-w-[40px]">
                             <div
                                 className="absolute h-full rounded-full"
                                 style={{
@@ -155,7 +155,7 @@ function DailyTimeline({ data }: { data: DailyForecast[] }) {
                         </div>
 
                         {/* High temp */}
-                        <span className="text-[10px] text-white/80 w-8 flex-shrink-0 font-mono">
+                        <span className="text-xs text-[var(--text-80)] w-8 flex-shrink-0 font-mono">
                             {formatTemp(day.temperatureMax, temperatureUnit)}
                         </span>
                     </div>
@@ -185,26 +185,26 @@ export default function WeatherTimeline({ collapsed, onToggle }: WeatherTimeline
                 className="flex items-center justify-between w-full group mb-1"
             >
                 <div className="flex items-center gap-1.5">
-                    <CalendarDays size={11} className="text-white/30" />
-                    <span className="text-[10px] font-bold text-white/35 uppercase tracking-widest group-hover:text-white/55 transition-colors">
+                    <CalendarDays size={11} className="text-[var(--text-35)]" />
+                    <span className="text-xs font-bold text-[var(--text-35)] uppercase tracking-widest group-hover:text-[var(--text-60)] transition-colors">
                         {t('weatherForecast')}
                     </span>
                 </div>
                 {collapsed
-                    ? <ChevronDown size={12} className="text-white/25" />
-                    : <ChevronUp size={12} className="text-white/25" />}
+                    ? <ChevronDown size={12} className="text-[var(--text-25)]" />
+                    : <ChevronUp size={12} className="text-[var(--text-25)]" />}
             </button>
 
             {!collapsed && (
                 <div className="space-y-2 mt-3">
-                    <div className="flex rounded-lg overflow-hidden border border-white/10 w-fit ml-auto">
+                    <div className="flex rounded-lg overflow-hidden border border-[var(--border-hover)] w-fit ml-auto">
                         <button
                             type="button"
                             onClick={() => setView('24h')}
-                            className={`text-[10px] font-semibold px-2.5 py-1 transition-all ${
+                            className={`text-xs font-semibold px-2.5 py-1 transition-all ${
                                 view === '24h'
                                     ? 'bg-blue-500/80 text-white'
-                                    : 'bg-white/5 text-white/50 hover:bg-white/10'
+                                    : 'bg-[var(--surface)] text-[var(--text-60)] hover:bg-[var(--surface-active)]'
                             }`}
                         >
                             {t('hourly24h')}
@@ -212,17 +212,17 @@ export default function WeatherTimeline({ collapsed, onToggle }: WeatherTimeline
                         <button
                             type="button"
                             onClick={() => setView('7d')}
-                            className={`text-[10px] font-semibold px-2.5 py-1 transition-all ${
+                            className={`text-xs font-semibold px-2.5 py-1 transition-all ${
                                 view === '7d'
                                     ? 'bg-blue-500/80 text-white'
-                                    : 'bg-white/5 text-white/50 hover:bg-white/10'
+                                    : 'bg-[var(--surface)] text-[var(--text-60)] hover:bg-[var(--surface-active)]'
                             }`}
                         >
                             {t('daily7d')}
                         </button>
                     </div>
 
-                    <div className="rounded-lg border border-white/10 bg-white/5 overflow-hidden p-2">
+                    <div className="rounded-lg border border-[var(--border-hover)] bg-[var(--surface)] overflow-hidden p-2">
                         {view === '24h' ? (
                             <HourlyTimeline data={forecastData.hourly} />
                         ) : (

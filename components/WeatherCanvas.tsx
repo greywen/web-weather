@@ -691,7 +691,6 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
     // --- Hail particle system (optimized with pre-rendered textures) ---
     const MAX_HAIL = 150;
     const HAIL_VERTS = 6;
-    const hailShapeOffsets = new Float32Array(MAX_HAIL * HAIL_VERTS * 2);
     const hailRotation = new Float32Array(MAX_HAIL);
     const hailRotSpeed = new Float32Array(MAX_HAIL);
 
@@ -713,7 +712,7 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
         const r = texSize * (0.7 + Math.random() * 0.3);
         const px = cx + Math.cos(angle) * r;
         const py = cy + Math.sin(angle) * r;
-        v === 0 ? tctx.moveTo(px, py) : tctx.lineTo(px, py);
+        if (v === 0) { tctx.moveTo(px, py); } else { tctx.lineTo(px, py); }
       }
       tctx.closePath();
       // Radial gradient for 3D ice look

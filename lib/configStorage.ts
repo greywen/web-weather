@@ -8,6 +8,7 @@ export const CONFIG_STORAGE_KEYS = {
   autoMode: 'web-weather-auto-mode',
   paramsOpen: 'web-weather-params-open',
   forecastOpen: 'web-weather-forecast-open',
+  theme: 'web-weather-theme',
 } as const;
 
 export type ConfigStorageKey = (typeof CONFIG_STORAGE_KEYS)[keyof typeof CONFIG_STORAGE_KEYS];
@@ -33,5 +34,17 @@ export function saveConfigToLocalStorage(key: ConfigStorageKey, value: string): 
     localStorage.setItem(key, value);
   } catch {
     // Ignore storage failures (private mode, quota exceeded, blocked storage).
+  }
+}
+
+export function removeConfigFromLocalStorage(key: ConfigStorageKey): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore storage failures.
   }
 }
