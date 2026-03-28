@@ -89,6 +89,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
   }));
   const [customCoords, setCustomCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [isAuto, setIsAuto] = useState<boolean>(false);
+  const [geoTrigger, setGeoTrigger] = useState(0);
     const [isLocating, setIsLocating] = useState<boolean>(false);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [forecastData, setForecastData] = useState<ForecastData | null>(null);
@@ -524,7 +525,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
             clearInterval(timeInterval);
         };
     }
-    }, [isAuto, customCoords]);
+    }, [isAuto, customCoords, geoTrigger]);
 
     useEffect(() => {
             if (!isAuto) queueMicrotask(() => setIsLocating(false));
@@ -539,15 +540,18 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const toggleAuto = () => {
-      const next = !isAuto;
-      if (next) {
-          // Avoid showing stale timestamp while waiting for the first fresh auto fetch.
-          setLastUpdated(null);
-          setCustomCoords(null); // Reset to geolocation when manually toggling auto
-          removeConfigFromLocalStorage(CONFIG_STORAGE_KEYS.mapLocation);
+      // Always clear stored coords and request fresh browser geolocation.
+      setLastUpdated(null);
+      setCustomCoords(null);
+      removeConfigFromLocalStorage(CONFIG_STORAGE_KEYS.mapLocation);
+      if (!isAuto) {
+          setIsAuto(true);
+          saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.autoMode, 'on');
+      } else {
+          // Already in auto mode — force the effect to re-run even if
+          // customCoords was already null (same value won't trigger effect).
+          setGeoTrigger(prev => prev + 1);
       }
-      setIsAuto(next);
-      saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.autoMode, next ? 'on' : 'off');
   };
 
   const setLocation = useCallback((lat: number, lon: number) => {
