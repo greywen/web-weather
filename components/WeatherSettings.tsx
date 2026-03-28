@@ -226,8 +226,8 @@ export default function WeatherSettings() {
                     ? 'opacity-100 translate-y-0 pointer-events-auto'
                     : 'opacity-0 -translate-y-4 pointer-events-none scale-[0.97]'}`}>
 
-                <div className="bg-[var(--panel-bg)] backdrop-blur-2xl border border-[var(--panel-border)] rounded-2xl shadow-[var(--panel-shadow)] overflow-hidden">
-                    <div className="max-h-[80vh] overflow-y-auto overflow-x-hidden settings-scroll">
+                <div className="bg-[var(--panel-bg)] backdrop-blur-2xl border border-[var(--panel-border)] rounded-2xl shadow-[var(--panel-shadow)] overflow-hidden flex flex-col max-h-[80vh]">
+                    <div className="flex-1 overflow-y-auto overflow-x-hidden settings-scroll min-h-0">
 
                         {/* ─── Section: Location header ─────────── */}
                         <div className="p-4 pb-3">
@@ -563,41 +563,42 @@ export default function WeatherSettings() {
                             )}
                         </div>
 
-                        {/* ─── Section: Bottom toolbar ────────────── */}
-                        <div className="px-4 pt-1 pb-3">
-                            <div className="h-px bg-[var(--divider)] mb-2" />
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-0.5">
-                                    <ToolbarBtn icon={soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
-                                        active={soundEnabled} onClick={() => setSoundEnabled(!soundEnabled)} title={t('sound')} />
-                                    <ToolbarBtn icon={immersive ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-                                        active={immersive}
-                                        onClick={() => { if (immersive) { setImmersive(false); setMenuOpen(false); } else setImmersive(true); }}
-                                        title={t('immersiveMode')} />
-                                    <ToolbarBtn icon={<LocateFixed size={15} className={isLocating ? 'animate-pulse' : ''} />}
-                                        active={isAuto} onClick={toggleAuto} title={t('locateMe' as TranslationKey)}
-                                        activeClass="bg-green-500/20 text-green-400" />
-                                </div>
-                                <div className="flex items-center gap-0.5">
-                                    <ToolbarBtn icon={theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
-                                        onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-                                        title={t('theme' as TranslationKey)} />
-                                    <button type="button" onClick={() => setTemperatureUnit(temperatureUnit === '°C' ? '°F' : '°C')}
-                                        className="px-2 py-1.5 rounded-xl text-xs font-bold text-[var(--text-35)] hover:text-[var(--text-70)] hover:bg-[var(--surface-hover)] transition-all"
-                                        title={t('temperatureUnit')}>
-                                        {temperatureUnit}
-                                    </button>
-                                    <button type="button" onClick={() => setLocale(locale === 'en' ? 'zh' : 'en')}
-                                        className="px-2 py-1.5 rounded-xl text-xs font-bold text-[var(--text-35)] hover:text-[var(--text-70)] hover:bg-[var(--surface-hover)] transition-all"
-                                        title={t('language')}>
-                                        {locale === 'en' ? '中' : 'EN'}
-                                    </button>
-                                    <a href="https://github.com/greywen/web-weather" target="_blank" rel="noopener noreferrer"
-                                        className="p-2 rounded-xl text-[var(--text-25)] hover:text-[var(--text-60)] hover:bg-[var(--surface-hover)] transition-all"
-                                        title="GitHub">
-                                        <Github size={15} />
-                                    </a>
-                                </div>
+                    </div>
+
+                    {/* ─── Pinned toolbar (always visible) ────── */}
+                    <div className="px-4 pt-1 pb-3 shrink-0">
+                        <div className="h-px bg-[var(--divider)] mb-2" />
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-0.5">
+                                <ToolbarBtn icon={soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+                                    active={soundEnabled} onClick={() => setSoundEnabled(!soundEnabled)} title={t('sound')} />
+                                <ToolbarBtn icon={immersive ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                                    active={immersive}
+                                    onClick={() => { if (immersive) { setImmersive(false); setMenuOpen(false); } else setImmersive(true); }}
+                                    title={t('immersiveMode')} />
+                                <ToolbarBtn icon={<LocateFixed size={15} className={isLocating ? 'animate-pulse' : ''} />}
+                                    active={isAuto} onClick={toggleAuto} title={t('locateMe' as TranslationKey)}
+                                    activeClass="bg-green-500/20 text-green-400" />
+                            </div>
+                            <div className="flex items-center gap-0.5">
+                                <ToolbarBtn icon={theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
+                                    onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+                                    title={t('theme' as TranslationKey)} />
+                                <button type="button" onClick={() => setTemperatureUnit(temperatureUnit === '°C' ? '°F' : '°C')}
+                                    className="px-2 py-1.5 rounded-xl text-xs font-bold text-[var(--text-35)] hover:text-[var(--text-70)] hover:bg-[var(--surface-hover)] transition-all"
+                                    title={t('temperatureUnit')}>
+                                    {temperatureUnit}
+                                </button>
+                                <button type="button" onClick={() => setLocale(locale === 'en' ? 'zh' : 'en')}
+                                    className="px-2 py-1.5 rounded-xl text-xs font-bold text-[var(--text-35)] hover:text-[var(--text-70)] hover:bg-[var(--surface-hover)] transition-all"
+                                    title={t('language')}>
+                                    {locale === 'en' ? '中' : 'EN'}
+                                </button>
+                                <a href="https://github.com/greywen/web-weather" target="_blank" rel="noopener noreferrer"
+                                    className="p-2 rounded-xl text-[var(--text-25)] hover:text-[var(--text-60)] hover:bg-[var(--surface-hover)] transition-all"
+                                    title="GitHub">
+                                    <Github size={15} />
+                                </a>
                             </div>
                         </div>
                     </div>
