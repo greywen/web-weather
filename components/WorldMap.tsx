@@ -24,16 +24,6 @@ const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
 // null = not yet probed; true/false = reachable or not.
 let cartoProbeResult: boolean | null = null;
 
-const CONTINENT_LABELS = [
-  { name: { en: 'Asia', zh: '亚洲' }, lat: 48, lon: 85 },
-  { name: { en: 'Europe', zh: '欧洲' }, lat: 54, lon: 15 },
-  { name: { en: 'Africa', zh: '非洲' }, lat: 5, lon: 22 },
-  { name: { en: 'North America', zh: '北美洲' }, lat: 48, lon: -100 },
-  { name: { en: 'South America', zh: '南美洲' }, lat: -15, lon: -58 },
-  { name: { en: 'Oceania', zh: '大洋洲' }, lat: -25, lon: 135 },
-  { name: { en: 'Antarctica', zh: '南极洲' }, lat: -78, lon: 0 },
-];
-
 async function fetchJsonWithRetry<T>(
   url: string,
   options: RequestInit,
@@ -176,16 +166,22 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
 
       if (cancelled) { map.remove(); return; }
 
-      // Tile providers: CARTO tiles (theme-aware), fallback to OSM if unreachable
+      // Tile providers:
+      // - zh locale: OSM standard tiles (renders Chinese characters via `name` tag)
+      // - en locale: CARTO split tiles (nolabels + labels, theme-aware)
+      // - Fallback: OSM standard tiles if CARTO is unreachable
       const cartoStyle = theme === 'dark' ? 'dark' : 'light';
       const CARTO_BASE = `https://{s}.basemaps.cartocdn.com/${cartoStyle}_nolabels/{z}/{x}/{y}{r}.png`;
       const CARTO_LABELS = `https://{s}.basemaps.cartocdn.com/${cartoStyle}_only_labels/{z}/{x}/{y}{r}.png`;
       const OSM_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+      const useLocalLabels = localeRef.current === 'zh';
 
-      // Probe CARTO availability once per page session (timeout 4s).
-      // If it failed before, skip the probe and fall back to OSM directly.
+      // For zh locale, skip CARTO probe — use OSM directly for Chinese labels.
+      // For en locale, probe CARTO availability once per page session (timeout 4s).
       let useCarto: boolean;
-      if (cartoProbeResult !== null) {
+      if (useLocalLabels) {
+        useCarto = false;
+      } else if (cartoProbeResult !== null) {
         useCarto = cartoProbeResult;
       } else {
         useCarto = true;
@@ -197,7 +193,6 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
             mode: 'no-cors',
           });
           clearTimeout(probeTimer);
-          // mode: no-cors gives opaque response (status 0), but no error means reachable
           if (res.type !== 'opaque' && !res.ok) useCarto = false;
         } catch {
           useCarto = false;
@@ -231,35 +226,6 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
       // Fallback: hide loading indicator after 10s even if tiles haven't loaded
       fallbackTimer = setTimeout(() => { if (!cancelled) setMapLoading(false); }, 10000);
 
-      // Add continent labels visible at low zoom levels
-      const continentMarkers: L.Marker[] = [];
-      CONTINENT_LABELS.forEach(({ name, lat, lon }) => {
-        const label = name[localeRef.current as keyof typeof name] || name.en;
-        const marker = L.marker([lat, lon], {
-          icon: L.divIcon({
-            html: `<div class="continent-label">${label}</div>`,
-            className: '',
-            iconSize: [150, 24],
-            iconAnchor: [75, 12],
-          }),
-          interactive: false,
-        });
-        continentMarkers.push(marker);
-      });
-
-      const updateContinentLabels = () => {
-        const zoom = map.getZoom();
-        continentMarkers.forEach(m => {
-          if (zoom <= 4) {
-            if (!map.hasLayer(m)) m.addTo(map);
-          } else {
-            if (map.hasLayer(m)) m.removeFrom(map);
-          }
-        });
-      };
-      updateContinentLabels();
-      map.on('zoomend', updateContinentLabels);
-
       L.control.zoom({ position: 'topright' }).addTo(map);
 
       mapRef.current = map;
@@ -275,6 +241,29 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
         reverseGeocode(markerLat, markerLon, localeRef.current).then(name => {
           if (!cancelled && geocodeSeqRef.current === seq) setSelectedName(name);
         });
+      } else if (!savedCenter && navigator.geolocation) {
+        // No cached location — try to geolocate the user
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            if (cancelled || !mapRef.current) return;
+            const { latitude, longitude } = pos.coords;
+            mapRef.current.flyTo([latitude, longitude], 5, { animate: true, duration: 1.2 });
+            setSelectedLat(latitude);
+            setSelectedLon(longitude);
+            const geoIcon = await createMarkerIcon();
+            if (cancelled || !mapRef.current) return;
+            if (markerRef.current) {
+              markerRef.current.setLatLng([latitude, longitude]);
+            } else {
+              markerRef.current = L.marker([latitude, longitude], { icon: geoIcon }).addTo(mapRef.current);
+            }
+            const seq = ++geocodeSeqRef.current;
+            const name = await reverseGeocode(latitude, longitude, localeRef.current);
+            if (!cancelled && geocodeSeqRef.current === seq) setSelectedName(name);
+          },
+          () => { /* User denied or geolocation unavailable — keep default view */ },
+          { timeout: 8000 }
+        );
       }
 
       map.on('click', async (e: L.LeafletMouseEvent) => {
@@ -528,21 +517,19 @@ export default function WorldMap({ onSelectLocation, onClose, initialLat, initia
             background: var(--background) !important;
             font-family: inherit;
             z-index: 0 !important;
+            cursor: default !important;
+          }
+          .leaflet-container.leaflet-drag-target {
+            cursor: default !important;
+          }
+          .leaflet-grab {
+            cursor: default !important;
+          }
+          .leaflet-dragging .leaflet-grab {
+            cursor: default !important;
           }
           .osm-dark-tiles {
             filter: invert(1) hue-rotate(180deg) brightness(0.8) contrast(1.1) saturate(0.3);
-          }
-          .continent-label {
-            font-size: 12px;
-            font-weight: 600;
-            letter-spacing: 4px;
-            text-transform: uppercase;
-            color: var(--text-40);
-            text-shadow: 0 1px 3px rgba(0,0,0,0.15);
-            white-space: nowrap;
-            text-align: center;
-            pointer-events: none;
-            user-select: none;
           }
           .leaflet-pane {
             z-index: 1 !important;
