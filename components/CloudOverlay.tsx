@@ -12,7 +12,7 @@ const LAYERS: Array<{ distance: number; duration: number }> = [
 ];
 
 export default function CloudOverlay({ forcedWeather, opacity = 1 }: { forcedWeather?: WeatherType; opacity?: number }) {
-  const { weather, config } = useWeather();
+  const { weather, config, paused } = useWeather();
   const effectiveWeather = forcedWeather ?? weather;
   const isCloudy = effectiveWeather === 'cloudy' || effectiveWeather === 'rainy' || effectiveWeather === 'hail';
 
@@ -52,6 +52,17 @@ export default function CloudOverlay({ forcedWeather, opacity = 1 }: { forcedWea
       anim.playbackRate = speed;
     });
   }, [speed]);
+
+  // Pause / resume cloud animations when mouse leaves / enters page
+  useEffect(() => {
+    animationsRef.current.forEach((anim) => {
+      if (paused) {
+        anim.pause();
+      } else {
+        anim.play();
+      }
+    });
+  }, [paused]);
 
   if (!isCloudy || opacity <= 0 || cloudCover <= 0) return null;
 

@@ -11,11 +11,13 @@ interface WeatherCanvasProps {
   className?: string;
   onLightningStrike?: () => void;
   onFpsUpdate?: (fps: number) => void;
+  paused?: boolean;
 }
 
-export default function WeatherCanvas({ weather, sunProgress, config, opacity = 1, className = '', onLightningStrike, onFpsUpdate }: WeatherCanvasProps) {
+export default function WeatherCanvas({ weather, sunProgress, config, opacity = 1, className = '', onLightningStrike, onFpsUpdate, paused = false }: WeatherCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>(0);
+  const pausedRef = useRef(paused);
   const thunderEnabledRef = useRef(Boolean(config.thunder));
   const thunderTriggerOnceRef = useRef(false);
   
@@ -33,6 +35,10 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
   useEffect(() => {
     configRef.current = config;
   }, [config]);
+
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
 
   useEffect(() => {
     const thunderNow = Boolean(config.thunder);
@@ -1334,6 +1340,11 @@ export default function WeatherCanvas({ weather, sunProgress, config, opacity = 
 
     // --- Animation loop ---
     const animate = () => {
+      // Skip frame when paused (mouse left page) but keep the loop alive
+      if (pausedRef.current) {
+        requestRef.current = requestAnimationFrame(animate);
+        return;
+      }
       ctx.clearRect(0, 0, width, height);
       const now = performance.now();
 

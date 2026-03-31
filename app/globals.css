@@ -193,6 +193,12 @@ body {
   transform: translate3d(0, 0, 0) rotate(0.01deg);
 }
 
+/* Pause all CSS animations when mouse leaves the page */
+.weather-paused .fog-smoke,
+.weather-paused .fog-smoke--slow {
+  animation-play-state: paused;
+}
+
 /* Primary fog effect — uniform white/gray wash that dominates the visual */
 .fog-tint {
   position: absolute;

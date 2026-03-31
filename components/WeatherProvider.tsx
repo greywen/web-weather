@@ -57,6 +57,7 @@ interface WeatherContextType {
   lastUpdated: Date | null;
   setLocation: (lat: number, lon: number) => void;
   customCoords: { lat: number; lon: number } | null;
+  paused: boolean;
 }
 
 const WeatherContext = createContext<WeatherContextType | undefined>(undefined);
@@ -78,6 +79,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
     const [transitionTo, setTransitionTo] = useState<WeatherType>('sunny');
     const [transitionProgress, setTransitionProgressState] = useState<number>(1);
     const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
+    const [pagePaused, setPagePaused] = useState<boolean>(false);
       const [transitionConfig, setTransitionConfigState] = useState<WeatherTransitionConfig>({
           duration: 0.5,
       });
@@ -150,6 +152,25 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
     };
     document.addEventListener('fullscreenchange', onFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
+  // Pause weather effects 3s after mouse leaves the page
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onLeave = () => {
+      timer = setTimeout(() => setPagePaused(true), 3000);
+    };
+    const onEnter = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      setPagePaused(false);
+    };
+    document.addEventListener('mouseleave', onLeave);
+    document.addEventListener('mouseenter', onEnter);
+    return () => {
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('mouseleave', onLeave);
+      document.removeEventListener('mouseenter', onEnter);
+    };
   }, []);
 
   const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
@@ -563,7 +584,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // Audio system
-  const { initAudio, triggerThunder } = useWeatherAudio(weather, config, soundEnabled, soundVolume);
+  const { initAudio, triggerThunder } = useWeatherAudio(weather, config, soundEnabled, soundVolume, pagePaused);
 
   const handleUserInteraction = useCallback(() => {
     initAudio();
@@ -671,9 +692,10 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
             lastUpdated,
             setLocation,
             customCoords,
+            paused: pagePaused,
         }}
     >
-            <div className="min-h-screen relative overflow-hidden" onClick={handleUserInteraction}>
+            <div className={`min-h-screen relative overflow-hidden${pagePaused ? ' weather-paused' : ''}`} onClick={handleUserInteraction}>
                 {/* Background crossfade */}
                 <div
                     className={`absolute inset-0 transition-opacity duration-700 ${getBackgroundClass(transitionFrom)}`}
@@ -692,6 +714,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
                             config={config}
                             opacity={fromOpacity}
                             className="z-0"
+                            paused={pagePaused}
                     />
                 )}
                 <WeatherCanvas 
@@ -702,6 +725,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
                         className="z-0"
                         onLightningStrike={triggerThunder}
                         onFpsUpdate={setFps}
+                        paused={pagePaused}
                 />
 
                 {/* Overlays crossfade */}

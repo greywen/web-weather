@@ -569,7 +569,8 @@ export function useWeatherAudio(
   weather: WeatherType,
   config: WeatherConfig,
   enabled: boolean,
-  volume: number // 0-1
+  volume: number, // 0-1
+  paused: boolean = false
 ) {
   const ctxRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
@@ -594,6 +595,17 @@ export function useWeatherAudio(
     gain.gain.cancelScheduledValues(ctx.currentTime);
     gain.gain.setTargetAtTime(target, ctx.currentTime, duration / 3);
   }, []);
+
+  // Suspend / resume AudioContext when mouse leaves / enters page
+  useEffect(() => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    if (paused) {
+      if (ctx.state === 'running') ctx.suspend();
+    } else {
+      if (ctx.state === 'suspended') ctx.resume();
+    }
+  }, [paused]);
 
   // Start all layers of an ambient set if not yet started
   const ensureStarted = useCallback((set: AmbientSet | null) => {
