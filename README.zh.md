@@ -2,6 +2,8 @@
 
 中文 | [English](README.md)
 
+> **Windows 天气壁纸 **：[greywen/weather-wallpaper](https://github.com/greywen/weather-wallpaper)
+
 **Web Weather** 是一个开源的交互式网页天气模拟项目，完全在浏览器中运行。基于 **Next.js**、**Canvas 2D** 和 **Web Audio API** 构建，可渲染逼真的雨、雪、雾、云、阳光和雷暴效果 —— 配合程序化音频合成、实时参数控制和基于地理定位的实时天气。
 
 **在线演示** — [weather.anhejin.cn](https://weather.anhejin.cn)

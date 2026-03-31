@@ -2,6 +2,8 @@
 
 English | [中文](README.zh.md)
 
+> **Windows Weather Wallpaper **: [greywen/weather-wallpaper](https://github.com/greywen/weather-wallpaper)
+
 **Web Weather** is an open-source, interactive weather simulation running entirely in the browser. Built with **Next.js**, **Canvas 2D**, and the **Web Audio API**, it renders realistic rain, snow, fog, clouds, sunshine, and thunderstorms — complete with procedural audio, real-time parameter controls, and live geolocation-based weather.
 
 **Live Demo** — [weather.anhejin.cn](https://weather.anhejin.cn)
