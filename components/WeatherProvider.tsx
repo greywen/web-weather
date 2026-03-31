@@ -54,6 +54,8 @@ interface WeatherContextType {
   setSoundVolume: (v: number) => void;
   immersive: boolean;
   setImmersive: (v: boolean) => void;
+  autoPause: boolean;
+  setAutoPause: (v: boolean) => void;
   lastUpdated: Date | null;
   setLocation: (lat: number, lon: number) => void;
   customCoords: { lat: number; lon: number } | null;
@@ -80,6 +82,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
     const [transitionProgress, setTransitionProgressState] = useState<number>(1);
     const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
     const [pagePaused, setPagePaused] = useState<boolean>(false);
+    const [autoPause, setAutoPauseState] = useState<boolean>(false);
       const [transitionConfig, setTransitionConfigState] = useState<WeatherTransitionConfig>({
           duration: 0.5,
       });
@@ -120,8 +123,12 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
       if (readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.sound) === 'on') {
         setSoundEnabledState(true);
       }
+
+      if (readConfigFromLocalStorage(CONFIG_STORAGE_KEYS.autoPause) === 'on') {
+        setAutoPauseState(true);
+      }
     });
-  }, []);
+  }, []); 
   const setSoundEnabled = useCallback((v: boolean) => {
       setSoundEnabledState(v);
             saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.sound, v ? 'on' : 'off');
@@ -154,8 +161,18 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
   }, []);
 
-  // Pause weather effects 3s after mouse leaves the page
+  const setAutoPause = useCallback((v: boolean) => {
+    setAutoPauseState(v);
+    saveConfigToLocalStorage(CONFIG_STORAGE_KEYS.autoPause, v ? 'on' : 'off');
+    if (!v) setPagePaused(false);
+  }, []);
+
+  // Pause weather effects 3s after mouse leaves the page (only when autoPause enabled)
   useEffect(() => {
+    if (!autoPause) {
+      setPagePaused(false);
+      return;
+    }
     let timer: ReturnType<typeof setTimeout> | null = null;
     const onLeave = () => {
       timer = setTimeout(() => setPagePaused(true), 3000);
@@ -171,7 +188,7 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
       document.removeEventListener('mouseleave', onLeave);
       document.removeEventListener('mouseenter', onEnter);
     };
-  }, []);
+  }, [autoPause]);
 
   const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 
@@ -689,6 +706,8 @@ export const WeatherProvider = ({ children }: { children: ReactNode }) => {
             setSoundVolume,
             immersive,
             setImmersive,
+            autoPause,
+            setAutoPause,
             lastUpdated,
             setLocation,
             customCoords,

@@ -7,7 +7,7 @@ import {
     MapPin, Search, Volume2, VolumeX, Maximize2, Minimize2,
     Clock, Github, X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
     Zap, Droplets, Thermometer, Eye, Globe,
-    LocateFixed, RefreshCw, SlidersHorizontal,
+    LocateFixed, RefreshCw, SlidersHorizontal, TimerOff,
 } from 'lucide-react';
 import { useWeather } from './WeatherProvider';
 import { WeatherType, WeatherConfig } from './weather-types';
@@ -117,7 +117,7 @@ export default function WeatherSettings() {
     const {
         weather, setWeather, config, setConfig, transition, setTransitionConfig,
         isAuto, isLocating, toggleAuto, soundEnabled, setSoundEnabled,
-        immersive, setImmersive, lastUpdated, setLocation, customCoords, weatherData,
+        immersive, setImmersive, autoPause, setAutoPause, lastUpdated, setLocation, customCoords, weatherData,
     } = useWeather();
     const { t, locale, setLocale, temperatureUnit, setTemperatureUnit, theme, setTheme } = useI18n();
 
@@ -572,6 +572,8 @@ export default function WeatherSettings() {
                             <div className="flex items-center gap-0.5">
                                 <ToolbarBtn icon={soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
                                     active={soundEnabled} onClick={() => setSoundEnabled(!soundEnabled)} title={t('sound')} />
+                                <ToolbarBtn icon={<TimerOff size={15} />}
+                                    active={autoPause} onClick={() => setAutoPause(!autoPause)} title={t('autoPauseDesc')} />
                                 <ToolbarBtn icon={immersive ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
                                     active={immersive}
                                     onClick={() => { if (immersive) { setImmersive(false); setMenuOpen(false); } else setImmersive(true); }}

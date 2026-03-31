@@ -36,6 +36,8 @@ const translations = {
     exit: 'Exit',
     sound: 'Sound',
     soundDesc: 'Rain / Wind / Thunder',
+    autoPause: 'Auto Pause',
+    autoPauseDesc: 'Pause effects when mouse leaves',
     on: 'On',
     off: 'Off',
 
@@ -136,6 +138,8 @@ const translations = {
     exit: '退出',
     sound: '声音',
     soundDesc: '雨声 / 风声 / 雷声',
+    autoPause: '自动暂停',
+    autoPauseDesc: '鼠标离开页面后暂停动效',
     on: '开启',
     off: '关闭',
 

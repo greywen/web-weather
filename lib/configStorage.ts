@@ -9,6 +9,7 @@ export const CONFIG_STORAGE_KEYS = {
   paramsOpen: 'web-weather-params-open',
   forecastOpen: 'web-weather-forecast-open',
   theme: 'web-weather-theme',
+  autoPause: 'web-weather-auto-pause',
 } as const;
 
 export type ConfigStorageKey = (typeof CONFIG_STORAGE_KEYS)[keyof typeof CONFIG_STORAGE_KEYS];
